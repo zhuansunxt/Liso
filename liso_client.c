@@ -20,7 +20,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 
-#define ECHO_PORT 9999
+#define ECHO_PORT 9998
 #define BUF_SIZE 4096
 
 int main(int argc, char* argv[])
