@@ -1,20 +1,36 @@
 ################################################################################
 # Makefile                                                                     #
 #                                                                              #
-# Description: This file contains the make rules for Recitation 1.             #
+# Description: This file contains the make rules for Liso HTTP server          #
 #                                                                              #
-# Authors: Athula Balachandran <abalacha@cs.cmu.edu>,                          #
-#          Wolf Richter <wolf@cs.cmu.edu>                                      #
+# Author: Xiaotong Sun (xiaotons@andrew.cmu.edu)                               #
 #                                                                              #
 ################################################################################
 
-default: lisod liso_client
+define build-cmd
+$(CC) $(CFLAGS) $< -o $@
+endef
 
-lisod:
-	@gcc liso_server.c -o lisod -Wall -Werror
+CC=gcc
+CFLAGS=-Wall  -Werror -O2
+SOURCE=src
+VPATH=$(SOURCE)
+OBJECTS = liso.o
+OBJECTS += server.o
+OBJECTS += io.o
+OBJECTS += utilities.o
 
-liso_client:
-	@gcc liso_client.c -o liso_client -Wall -Werror
+default: lisod
+
+lisod: $(OBJECTS)
+	$(CC) $(CFLAGS) -o lisod $(OBJECTS)
+
+$(SOURCE)/%.o: %.c
+	$(build-cmd)
+
+client: liso_client.c
+	$(CC) -o  liso_client liso_client.c
 
 clean:
-	@rm lisod liso_client
+	rm *.o
+	rm lisod
