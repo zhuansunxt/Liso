@@ -1,5 +1,6 @@
-- The only limit on the number of clients that this server can handle
-  is the minimum of the two values FD_SETSIZE and the maximum number of descriptors allowed
-  for this process by the kernel.
-- Concurrency
+Consider these potential vulnerabilities:
+
 - Buffer overflow
+- Unknown request/Invalid headers
+- Abrupt leaving client
+- Concurrency

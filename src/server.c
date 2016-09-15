@@ -1,6 +1,6 @@
 #include "server.h"
 
-const unsigned int BUF_SIZE = 4096;
+const unsigned int BUF_SIZE = 8192;
 
 /*
  * Initialize client pool with <listenfd> as the only active socket descriptor.
@@ -14,7 +14,8 @@ void init_pool(int listenfd, client_pool *p) {
   p->maxfd = listenfd;
   p->nready = 0;
   p->maxi = -1;
-  for (int i = 0; i < FD_SETSIZE; i++) {
+  int i;
+  for (i = 0; i < FD_SETSIZE; i++) {
     p->client_fd[i] = -1;     /* - 1 indicates avaialble entry */
   }
 }
@@ -45,7 +46,8 @@ void add_client_to_pool(int newfd, client_pool *p) {
 }
 
 void handle_clients(client_pool *p) {
-  int i, nbytes, clientfd;
+  ssize_t  nbytes;
+  int i, clientfd;
   char buf[BUF_SIZE];
 
   for (i = 0; (i <= p->maxi) && (p->nready > 0); i++) {
@@ -64,12 +66,12 @@ void handle_clients(client_pool *p) {
         if (nbytes == 0) {    /* Connection closed by client */
           printlog("[Client pool] Connection closed by client on socket %d", clientfd);
         } else {
+          if (errno == EINTR) continue;   /* TODO: reason about this */
           printlog("[Client pool] Exception on recv() from client on socket %d", clientfd);
         }
         clear_client(clientfd, i, p);
       }
       p->nready--;
-      if (p->nready <= 0) return; /* No more readable descriptors */
     } // End handling readable descriptor.
   } // End for loop.
 } // End function.

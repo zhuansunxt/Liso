@@ -28,12 +28,10 @@ socketList = []
 RECV_TOTAL_TIMEOUT = 0.1
 RECV_EACH_TIMEOUT = 0.05
 
-
 for i in xrange(numConnections):
     s = socket(AF_INET, SOCK_STREAM)
     s.connect((serverHost, serverPort))
     socketList.append(s)
-
 
 for i in xrange(numTrials):
     socketSubset = []
@@ -56,7 +54,7 @@ for i in xrange(numTrials):
             socketSubset[j].settimeout(RECV_EACH_TIMEOUT)
             data += socketSubset[j].recv(randomLen[j])
             if time.time() - start_time > RECV_TOTAL_TIMEOUT:
-		print "Total Time Exceeded"
+                print "Total Time Exceeded"
                 break
         if data != randomData[j]:
             sys.stderr.write("Error: Data received is not the same as sent! \n")

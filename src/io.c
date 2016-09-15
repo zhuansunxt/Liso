@@ -57,8 +57,8 @@ int open_listenfd(int port){
  * Return number of bytes that are sent on success.
  * Return -1 on error.
  */
-int sendn(int fd, const void *vptr, int n) {
-  size_t nleft = n;
+ssize_t sendn(int fd, const void *vptr, ssize_t n) {
+  ssize_t nleft = n;
   ssize_t nwritten = 0;
   const char *ptr = vptr;
 

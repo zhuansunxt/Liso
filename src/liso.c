@@ -4,10 +4,10 @@
 int main(int args, char **argv) {
 
   /* Check usage */
-  if (args != 2) {
-    printlog(USAGE, argv[0]);
-    exit(1);
-  }
+//  if (args < 8) {
+//    printlog(USAGE, argv[0]);
+//    exit(1);
+//  }
 
   /* Paramters from terminal */
   int port = atoi(argv[1]);

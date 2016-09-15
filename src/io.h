@@ -18,7 +18,7 @@ typedef struct addrinfo addrinfo;
 
 void *get_in_addr(sockaddr *sa);
 int open_listenfd(int port);
-int sendn(int, const void *, int);
+ssize_t sendn(int, const void *, ssize_t);
 void Sendn(int, const void *, int);
 /*--------------- End Socket APIs ------------*/
 

@@ -11,6 +11,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#define DEBUG_VERBOSE 0
+
 /* Logging */
 void printlog(const char *fmt, ...);
 
