@@ -40,7 +40,7 @@ void add_client_to_pool(int newfd, client_pool *p) {
 
   if (i == FD_SETSIZE) {
     /* Coundn't find available slot in pool */
-    printlog("[Client pool] Too many clients! No available slot for new client connection");
+    console_log("[Client pool] Too many clients! No available slot for new client connection");
     //TODO: handle too many client case
   }
 }
@@ -59,15 +59,15 @@ void handle_clients(client_pool *p) {
       set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
       nbytes = recv(clientfd, buf, BUF_SIZE, 0);
       if (nbytes > 0) {       /* Successful read, echo msg back */
-        printlog("[Client pool] Receive %d bytes from client on socket %d", nbytes, clientfd);
+        write_log("[Client pool] Receive %d bytes from client on socket %d", nbytes, clientfd);
         Sendn(clientfd, buf, nbytes);
         clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       } else if (nbytes <= 0){
         if (nbytes == 0) {    /* Connection closed by client */
-          printlog("[Client pool] Connection closed by client on socket %d", clientfd);
+          write_log("[Client pool] Connection closed by client on socket %d", clientfd);
         } else {
           if (errno == EINTR) continue;   /* TODO: reason about this */
-          printlog("[Client pool] Exception on recv() from client on socket %d", clientfd);
+          err_sys("error on recv() from client on socket %d", clientfd);
         }
         clear_client(clientfd, i, p);
       }

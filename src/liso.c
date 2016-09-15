@@ -1,16 +1,24 @@
 #include "liso.h"
 #include "server.h"
 
+char *LOGFILE;
+
 int main(int args, char **argv) {
 
   /* Check usage */
-//  if (args < 8) {
-//    printlog(USAGE, argv[0]);
-//    exit(1);
-//  }
+  if (args < 2) {
+    console_log(USAGE, argv[0]);
+    exit(1);
+  }
 
   /* Paramters from terminal */
   int port = atoi(argv[1]);
+  LOGFILE = argv[2];
+  int logexist;
+  if ((logexist = access(LOGFILE, R_OK)) == 0) {
+    remove(LOGFILE);
+    console_log("[INFO] log file exists, force delete it");
+  }
 
   /* Temp parameters */
   int listenfd, newfd;
@@ -20,22 +28,22 @@ int main(int args, char **argv) {
   static client_pool pool;
 
   /* Create server's only listener socket */
-  printlog("[Main] ************Liso Echo Server*********");
-  while ((listenfd = open_listenfd(port)) < 0) ;
-  printlog("[Main] Successfully create listener socket %d", listenfd);
+  console_log("[Main] ************Liso Echo Server*********");
+  while ((listenfd = open_listenfd(port)) < 0);
+  write_log("[Main] Successfully create listener socket %d", listenfd);
 
   /* Init client pool */
   init_pool(listenfd, &pool);
 
   while(1) {
-    printlog("[Main] Selecting...");
+    write_log("[Main] Selecting...");
     pool.read_fds = pool.master;
     pool.nready = select(pool.maxfd+1, &pool.read_fds, NULL, NULL, NULL);
 
     /* Handle exception in select, ignore all inormal cases */
     if (pool.nready <= 0) {
       if (pool.nready < 0) {
-        printlog("[Main] Error select");
+        err_sys("error in select");
       }
       continue;
     }
@@ -46,11 +54,11 @@ int main(int args, char **argv) {
 
       if (newfd < 0) {
         /* Ignore exception case in accept */
-        printlog("[Main] Error when accepting new client connection");
+        err_sys("error when accepting new client connection");
         continue;
       }
 
-      printlog("[Main] New connection from %s on socket %d",
+      write_log("[Main] New connection from %s on socket %d",
                inet_ntop(clientaddr.sin_family,
                          get_in_addr((sockaddr *) &clientaddr),
                          remoteIP,

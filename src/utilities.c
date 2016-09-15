@@ -1,16 +1,43 @@
-
 #include "utilities.h"
 
-void printlog(const char *fmt, ...){
-#if DEBUG_VERBOSE
+char *LOGFILE;
+
+/*
+ * Write log to console.
+ * Use this logging to output interactive info.
+ */
+void console_log(const char *fmt, ...){
   va_list(args);
   va_start(args, fmt);
   vprintf(fmt, args);
   printf("\n");
   va_end(args);
-#endif
 }
 
+/*
+ * Write log to log file, specified by command-line argument.
+ * Use this logging to record server runtime info, both for debugging and production.
+ */
+void write_log(const char *fmt, ...){
+  FILE *logfile;
+  logfile = fopen(LOGFILE, "a");
+  if (logfile == NULL) {
+    err_sys("[ERROR] log file cannot be accessed");
+    return;
+  }
+
+  va_list(args);
+  va_start(args, fmt);
+  vfprintf(logfile, fmt, args);
+  va_end(args);
+  fprintf(logfile, "\n");
+  fflush(logfile);
+  fclose(logfile);
+}
+
+/*
+ * Output system error to console to indicate system call failure
+ */
 void err_sys(const char *fmt, ...){
   va_list(args);
   va_start(args, fmt);

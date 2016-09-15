@@ -22,13 +22,13 @@ int open_listenfd(int port){
 
   /* Create socket descriptor for listening usage */
   if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    printlog("%s create listener socket", SOCKET_API_ERR_MSG);
+    console_log("%s create listener socket", SOCKET_API_ERR_MSG);
     return -1;
   }
 
   /* Eliminates "Address already in use" error from bind */
   if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) < 0) {
-    printlog("%s set SO_REUSEADDR", SOCKET_API_ERR_MSG);
+    console_log("%s set SO_REUSEADDR", SOCKET_API_ERR_MSG);
     return -1;
   }
 
@@ -38,13 +38,13 @@ int open_listenfd(int port){
   serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
   serveraddr.sin_port = htons((unsigned short)port);
   if (bind(listenfd, (sockaddr *)&serveraddr, sizeof(serveraddr)) < 0) {
-    printlog("%s bind listenser socket", SOCKET_API_ERR_MSG);
+    console_log("%s bind listenser socket", SOCKET_API_ERR_MSG);
     close(listenfd);
     return -1;
   }
 
   if (listen(listenfd, 10) < 0) {
-    printlog("%s listen on listener socket", SOCKET_API_ERR_MSG);
+    console_log("%s listen on listener socket", SOCKET_API_ERR_MSG);
     return -1;
   }
 

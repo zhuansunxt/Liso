@@ -13,8 +13,11 @@
 
 #define DEBUG_VERBOSE 0
 
+extern char *LOGFILE;
+
 /* Logging */
-void printlog(const char *fmt, ...);
+void console_log(const char *fmt, ...);
+void write_log(const char *fmt, ...);
 
 /* Error handling */
 void err_sys(const char *fmt, ...);
