@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "utilities.h"
+#include "commons.h"
 
 #define SOCKET_API_ERR_MSG "[Error in socket_api]"
 

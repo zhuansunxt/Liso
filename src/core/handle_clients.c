@@ -1,4 +1,4 @@
-#include "server.h"
+#include "handle_clients.h"
 
 const unsigned int BUF_SIZE = 8192;
 
@@ -59,12 +59,12 @@ void handle_clients(client_pool *p) {
       set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
       nbytes = recv(clientfd, buf, BUF_SIZE, 0);
       if (nbytes > 0) {       /* Successful read, echo msg back */
-        write_log("[Client pool] Receive %d bytes from client on socket %d", nbytes, clientfd);
+        dump_log("[Client pool] Receive %d bytes from client on socket %d", nbytes, clientfd);
         Sendn(clientfd, buf, nbytes);
         clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       } else if (nbytes <= 0){
         if (nbytes == 0) {    /* Connection closed by client */
-          write_log("[Client pool] Connection closed by client on socket %d", clientfd);
+          dump_log("[Client pool] Connection closed by client on socket %d", clientfd);
         } else {
           if (errno == EINTR) continue;   /* TODO: reason about this */
           err_sys("error on recv() from client on socket %d", clientfd);

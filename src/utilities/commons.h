@@ -12,14 +12,22 @@
 #include <unistd.h>
 
 #define DEBUG_VERBOSE 0
+#define SERVER_FAILURE 1   /* main execution returns this value when server crash */
 
 extern char *LOGFILE;
+extern FILE *log_file;
 
-/* Logging */
+/*
+ * logging utilities
+ */
 void console_log(const char *fmt, ...);
-void write_log(const char *fmt, ...);
+int init_log();
+void dump_log(const char *fmt, ...);
+void close_log();
 
-/* Error handling */
+/*
+ * error handling utilites
+ */
 void err_sys(const char *fmt, ...);
 
 /* Non-block IO */

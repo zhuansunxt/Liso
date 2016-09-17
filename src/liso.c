@@ -1,7 +1,9 @@
 #include "liso.h"
-#include "server.h"
+#include "core/handle_clients.h"
+#include "utilities/commons.h"
 
 char *LOGFILE;
+FILE *log_file;
 
 int main(int args, char **argv) {
 
@@ -14,10 +16,8 @@ int main(int args, char **argv) {
   /* Paramters from terminal */
   int port = atoi(argv[1]);
   LOGFILE = argv[2];
-  int logexist;
-  if ((logexist = access(LOGFILE, R_OK)) == 0) {
-    remove(LOGFILE);
-    console_log("[INFO] log file exists, force delete it");
+  if (init_log() < 0) {
+    return SERVER_FAILURE;
   }
 
   /* Temp parameters */
@@ -28,15 +28,15 @@ int main(int args, char **argv) {
   static client_pool pool;
 
   /* Create server's only listener socket */
-  console_log("[Main] ************Liso Echo Server*********");
+  console_log("[INFO] ************Liso Echo Server*********");
   while ((listenfd = open_listenfd(port)) < 0);
-  write_log("[Main] Successfully create listener socket %d", listenfd);
+  dump_log("[Main] Successfully create listener socket %d", listenfd);
 
   /* Init client pool */
   init_pool(listenfd, &pool);
 
   while(1) {
-    write_log("[Main] Selecting...");
+    dump_log("[Main] Selecting...");
     pool.read_fds = pool.master;
     pool.nready = select(pool.maxfd+1, &pool.read_fds, NULL, NULL, NULL);
 
@@ -58,7 +58,7 @@ int main(int args, char **argv) {
         continue;
       }
 
-      write_log("[Main] New connection from %s on socket %d",
+      dump_log("[Main] New connection from %s on socket %d",
                inet_ntop(clientaddr.sin_family,
                          get_in_addr((sockaddr *) &clientaddr),
                          remoteIP,

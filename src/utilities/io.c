@@ -1,3 +1,8 @@
+/**
+ * IO:
+ *  This file contains all I/O related functions's implementations, including interfaces dealing
+ *  with network sockets and disk files.
+ */
 #include "io.h"
 
 /*
