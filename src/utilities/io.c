@@ -91,3 +91,19 @@ void Sendn(int fd, const void *ptr, int n) {
   if (sendn(fd, ptr, n) != n)
     err_sys("sendn error");
 }
+
+/*
+ * Wrapper for mkdir sys call.
+ */
+int create_folder(const char *path, mode_t mode) {
+  int ret;
+  struct stat st = {0};
+
+  if (stat(path, &st) != -1) return 0;    /* If already exists then return */
+
+  ret = mkdir(path, mode);
+  if (ret < 0) {
+    err_sys("mkdir error");
+  }
+  return ret;
+}

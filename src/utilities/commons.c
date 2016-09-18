@@ -7,6 +7,7 @@
 
 char *LOGFILE;
 FILE *log_file;
+int listenfd;
 
 /*
  * Write log to console.
@@ -34,7 +35,6 @@ int init_log() {
   log_file = fopen(LOGFILE, "a");
   if (log_file == NULL) {
     err_sys("[ERROR] log file can not be created");
-    return -1;
   }
   return 0;
 }
@@ -67,10 +67,21 @@ void close_log() {
 void err_sys(const char *fmt, ...){
   va_list(args);
   va_start(args, fmt);
+  printf("[Crash]");
   vprintf(fmt, args);
   printf("\n");
   va_end(args);
-  exit(1);
+  exit(SERVER_FAILURE);
+}
+
+/*
+ * Release all resources server holds.
+ * e.g. listen sockets, log file, client pool, etc.
+ * Usually call this before server crash due to sys error.
+ */
+void tear_down() {
+  close_log();
+  close(listenfd);
 }
 
 void set_fl(int fd, int flags) /* flags are file status flags to turn on */

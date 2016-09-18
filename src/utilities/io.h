@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 
 #include "commons.h"
@@ -21,5 +22,9 @@ int open_listenfd(int port);
 ssize_t sendn(int, const void *, ssize_t);
 void Sendn(int, const void *, int);
 /*--------------- End Socket APIs ------------*/
+
+/*--------------- File System APIs ---------------*/
+int create_folder(const char *, mode_t);
+/*--------------- End File System APIs -----------*/
 
 #endif //LISO_IO_H

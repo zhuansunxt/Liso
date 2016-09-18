@@ -4,6 +4,20 @@
 
 char *LOGFILE;
 FILE *log_file;
+char *WWW_FOLDER;
+int listenfd;
+client_pool pool;
+
+void sig_handler(int signo) {
+  console_log("called\n");
+  switch (signo) {
+    case SIGINT:
+      tear_down();
+      break;
+    default:
+      console_log("[Error] signo %d not handled", signo);
+  }
+}
 
 int main(int args, char **argv) {
 
@@ -13,19 +27,21 @@ int main(int args, char **argv) {
     exit(1);
   }
 
+  /* Install signal handler */
+  signal(SIGINT, sig_handler);
+
   /* Paramters from terminal */
-  int port = atoi(argv[1]);
-  LOGFILE = argv[2];
-  if (init_log() < 0) {
-    return SERVER_FAILURE;
-  }
+  int port = atoi(argv[1]);   /* port param */
+  LOGFILE = argv[2];          /* log file param */
+  init_log();
+  WWW_FOLDER = argv[3];       /* www folder param */
+  create_folder(WWW_FOLDER, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 
   /* Temp parameters */
-  int listenfd, newfd;
+  int newfd;
   sockaddr_in clientaddr;
   socklen_t addrlen = sizeof(sockaddr_in);
   char remoteIP[INET6_ADDRSTRLEN];
-  static client_pool pool;
 
   /* Create server's only listener socket */
   console_log("[INFO] ************Liso Echo Server*********");
@@ -33,7 +49,7 @@ int main(int args, char **argv) {
   dump_log("[Main] Successfully create listener socket %d", listenfd);
 
   /* Init client pool */
-  init_pool(listenfd, &pool);
+  init_pool(listenfd);
 
   while(1) {
     dump_log("[Main] Selecting...");
@@ -65,10 +81,10 @@ int main(int args, char **argv) {
                          INET6_ADDRSTRLEN),
                newfd);
 
-      add_client_to_pool(newfd, &pool);
+      add_client_to_pool(newfd);
 
       if (pool.nready <= 0) continue;   /* No more readable descriptors */
     }
-    handle_clients(&pool);
+    handle_clients();
   }
 }

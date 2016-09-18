@@ -1,3 +1,3 @@
 #!/bin/bash
 # Start Liso HTTP server
-./lisod 9999 $(pwd)/log
+./lisod 9999 $(pwd)/log $(pwd)/www

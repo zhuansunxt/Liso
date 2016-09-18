@@ -11,11 +11,12 @@
 #include <string.h>
 #include <unistd.h>
 
-#define DEBUG_VERBOSE 0
+#define DEBUG_VERBOSE 1
 #define SERVER_FAILURE 1   /* main execution returns this value when server crash */
+#define BUF_SIZE 8192
 
-extern char *LOGFILE;
-extern FILE *log_file;
+char *LOGFILE;
+FILE *log_file;
 
 /*
  * logging utilities
@@ -26,9 +27,10 @@ void dump_log(const char *fmt, ...);
 void close_log();
 
 /*
- * error handling utilites
+ * error handling
  */
 void err_sys(const char *fmt, ...);
+void tear_down();
 
 /* Non-block IO */
 void set_fl(int fd, int flags);

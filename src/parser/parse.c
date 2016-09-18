@@ -9,7 +9,7 @@ extern int yyparse(void);
  * Return fulfilled buffer on success.
  * Return NULL porinter on failure.
  */
-Request * parse(char *buffer, int size, int socketFd) {
+Request * parse(char *buffer, int size) {
   //Differant states in the state machine
 	enum {
 		STATE_START = 0, STATE_CR, STATE_CRLF, STATE_CRLFCR, STATE_CRLFCRLF

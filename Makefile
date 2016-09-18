@@ -24,6 +24,7 @@ PARSER_DEPS = $(PARSE_DIR)/parse.h $(PARSE_DIR)/y.tab.h
 OBJ=$(OBJ_DIR)/io.o
 OBJ+=$(OBJ_DIR)/commons.o
 OBJ+=$(OBJ_DIR)/handle_clients.o
+OBJ+=$(OBJ_DIR)/handle_request.o
 OBJ+=$(OBJ_DIR)/y.tab.o
 OBJ+=$(OBJ_DIR)/lex.yy.o
 OBJ+=$(OBJ_DIR)/parse.o
@@ -51,6 +52,9 @@ $(OBJ_DIR)/io.o: $(UTILITY_DIR)/io.c $(UTILITY_DIR)/io.h
 	$(build-cmd)
 
 $(OBJ_DIR)/handle_clients.o: $(CORE_DIR)/handle_clients.c $(CORE_DIR)/handle_clients.h
+	$(build-cmd)
+
+$(OBJ_DIR)/handle_request.o: $(CORE_DIR)/handle_request.c $(CORE_DIR)/handle_request.h
 	$(build-cmd)
 
 $(OBJ_DIR)/%.o: $(PARSE_DIR)/%.c $(PARSER_DEPS)
