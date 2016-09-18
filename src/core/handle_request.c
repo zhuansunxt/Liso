@@ -18,7 +18,7 @@ const char *server_str = "Liso/1.0";
 
 
 /*
- * Return 0 on normal case (2xx status code family).
+ * Return 0 when the current connection should not be closed.
  * Return corresponding status code on inormal case (4xx, 5xx status code family).
  * Return -1 on internal error
  */
@@ -33,20 +33,24 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
 
   /* parse header */
   Request *request = parse(buf, len);
+
+  /* Handle 400 Error: Bad request */
   if (request == NULL) {
     /* if parsing fails, send back 400 error */
     send_response(reply, (char*)"400", (char*)"Bad Request");
     reply_to_client(clientfd, reply);
+    free_request(request);
     return 400;
   }
 
-  /* check version */
+  /* Handle 505 Error: Version not supported */
   int correct_version;
   correct_version = check_http_version(request);
   if (correct_version < 0) {
     /* if checking version fails, send back 505 error */
     send_response(reply, (char*)"505", (char*)"HTTP Version not supported");
     reply_to_client(clientfd, reply);
+    free_request(request);
     return 505;
   }
 
@@ -56,31 +60,32 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   {
     int head_ret = do_head(request, reply);
     reply_to_client(clientfd, reply);
+    free_request(request);
     return head_ret;
   }
   else if (!strcmp(method, "GET"))
   {
-#ifdef DEBUG_VERBOSE
-    console_log("[INFO][HTTP] Client %d: To deal with GET!", clientfd);
-    send_response(reply, (char*)"501", (char*)"Not Implemented");
+    int get_ret = do_get(request, reply);
     reply_to_client(clientfd, reply);
-#endif
+    free_request(request);
+    return get_ret;
   }
   else if (!strcmp(method, "POST"))
   {
-#ifdef DEBUG_VERBOSE
-    console_log("[INFO][HTTP] Client %d: To deal with POST", clientfd);
-    send_response(reply, (char*)"501", (char*)"Not Implemented");
+    int post_ret = do_post(request, reply);
     reply_to_client(clientfd, reply);
-#endif
+    free_request(request);
+    return post_ret;
   }
   else
   {
     send_response(reply, (char*)"501", (char*)"Not Implemented");
     reply_to_client(clientfd, reply);
+    free_request(request);
     return 501;
   }
 
+  // control should not reach here.
   return 0;
 }
 
@@ -212,4 +217,12 @@ void get_header_value(Request *request, const char * hname, char *hvalue) {
 #ifdef DEBUG_VERBOSE
   console_log("[INFO][ERROR] Header name %s not found in request", hname);
 #endif
+}
+
+/*
+ * Free parsed request resources
+ */
+void free_request(Request *request) {
+  free(request->header_count);
+  free(request);
 }

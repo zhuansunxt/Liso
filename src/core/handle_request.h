@@ -23,6 +23,8 @@ int send_msg(char*, const char*);
 void get_mime_type(const char*, char*);
 void get_header_value(Request*, const char*, char*);
 
+void free_request(Request *);
+
 int do_head(Request *, char *);
 int do_get(Request *, char *);    //TODO
 int do_post(Request *, char *);   //TODO
