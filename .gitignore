@@ -1,0 +1,17 @@
+*.so
+*.o
+*.tab.c
+*.tab.h
+log
+exp/
+www/
+.swp
+client
+lisod
+src/parser/Makefile
+src/parser/example
+src/parser/example.c
+src/parser/lex.yy.c
+src/parser/testset/
+.DS_STORE
+.idea/

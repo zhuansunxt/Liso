@@ -89,7 +89,13 @@ void handle_clients() {
         char *header_end = strstr(client_buffer, header_end_id);
         if (header_end == NULL && header_len < BUF_SIZE) continue;   /* HTTP header not complete yet */
 
-        handle_http_request(clientfd, client_buffer, header_len);
+        header_done(clientfd);
+        int http_res = handle_http_request(clientfd, client_buffer, header_len);
+
+        /* TODO: based on <http_res>, determine whether to close the connection and release resources */
+#ifdef DEBUG_VERBOSE
+        console_log("[INFO] Client %d HTTP handle result: %d", clientfd, http_res);
+#endif
         clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       }
       else if (nbytes <= 0)
@@ -118,6 +124,17 @@ void clear_client(int client_fd, int idx){
   p->buffer_offset[idx] = -1;
   p->buffer_cap[idx] = 0;
   p->received_header[idx] = 0;
+}
+
+/*
+ * Clear pool. Only call this when server crash.
+ */
+void clear_pool() {
+  int i, clientfd;
+  for (i = 0; i < FD_SETSIZE; i++) {
+    clientfd = p->client_fd[i];
+    if (clientfd > 0) clear_client(clientfd, i);
+  }
 }
 
 /*
@@ -178,4 +195,21 @@ size_t get_client_buffer_offset(int client) {
 #endif
   dump_log("[INFO] Client not found when trying to get buffer offset");
   return 0;
+}
+
+void header_done(int client) {
+  int i, clientfd;
+
+  for(i = 0; i < FD_SETSIZE; i++) {
+    clientfd = p->client_fd[i];
+    if (clientfd == client) {
+      p->received_header[i] = 1;
+      return ;
+    }
+  }
+  // no such client to be found
+#ifdef DEBUG_VERBOSE
+  console_log("[INFO] Client not found when setting received header to be true");
+#endif
+  dump_log("[INFO] Client not found when setting received header to be true");
 }

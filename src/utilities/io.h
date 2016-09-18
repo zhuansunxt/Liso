@@ -5,6 +5,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <ctype.h>
+#include <time.h>
 
 #include "commons.h"
 
@@ -25,6 +27,12 @@ void Sendn(int, const void *, int);
 
 /*--------------- File System APIs ---------------*/
 int create_folder(const char *, mode_t);
+int is_dir(const char *path);
+void get_extension(const char *, char*);
+void str_tolower(char *);
+void get_curr_time(char *, size_t);
+size_t get_file_len(const char*);
+void get_flmodified(const char*, char *, size_t);
 /*--------------- End File System APIs -----------*/
 
 #endif //LISO_IO_H

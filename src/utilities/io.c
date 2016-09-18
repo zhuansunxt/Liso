@@ -57,7 +57,7 @@ int open_listenfd(int port){
 }
 
 /*
- * Wrapper for send(): send n bytes
+ * Wrapper for send(): send n bytes.
  * guarantee to send all data given length n.
  * Return number of bytes that are sent on success.
  * Return -1 on error.
@@ -94,6 +94,7 @@ void Sendn(int fd, const void *ptr, int n) {
 
 /*
  * Wrapper for mkdir sys call.
+ * If the directory already exists, do nothing.
  */
 int create_folder(const char *path, mode_t mode) {
   int ret;
@@ -106,4 +107,76 @@ int create_folder(const char *path, mode_t mode) {
     err_sys("mkdir error");
   }
   return ret;
+}
+
+/*
+ * Check whether a file path is directory.
+ * Return 1 if it is, 0 otherwise.
+ */
+int is_dir(const char *path) {
+  size_t len = strlen(path);
+  if (path[len-1] == '/') {
+    return 1;
+  }
+  return 0;
+}
+
+/*
+ * Return extension name given file path.
+ * TODO: Implementation is ad-hoc. Need further testing.
+ */
+void get_extension(const char *path, char *result) {
+  int extension_max_len = 10;
+  size_t len = strlen(path);
+  int i;
+  for (i = len-1; i >= 0 && (len-i) < extension_max_len; i--) {
+    int curr_len = len-i;
+    if (path[i] == '.') {
+      strncpy(result, path +(len-curr_len)+1, curr_len-1);
+      return ;
+    }
+  }
+  strncpy(result, "none", 4);
+}
+
+/*
+ * Convert all chars of a str to lower case in place.
+ */
+void str_tolower(char *str) {
+  int i;
+  for (i = 0; str[i]; i++) {
+    str[i] = tolower(str[i]);
+  }
+}
+
+/*
+ * Get file content length given file path.
+ */
+size_t get_file_len(const char* fullpath) {
+  struct stat st;
+  stat(fullpath, &st);
+  return st.st_size;
+}
+
+/*
+ * Get current time.
+ */
+void get_curr_time(char *time_buf, size_t buf_size) {
+  time_t raw_time;
+  struct tm * timeinfo;
+
+  time(&raw_time);
+  timeinfo = localtime(&raw_time);
+  strftime(time_buf, buf_size, "%a, %d %b %Y %H:%M:%S %Z", timeinfo);
+}
+
+/*
+ * Get file's last modified name given file path.
+ */
+void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
+  struct stat st;
+  struct tm *curr_gmt_time = NULL;
+  stat(path, &st);
+  curr_gmt_time = gmtime(&st.st_mtime);
+  strftime(last_mod_time, buf_size, "%a, %d %b %Y %H:%M:%S %Z", curr_gmt_time);
 }

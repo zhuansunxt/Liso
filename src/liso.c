@@ -13,6 +13,7 @@ void sig_handler(int signo) {
   switch (signo) {
     case SIGINT:
       tear_down();
+      clear_pool();
       break;
     default:
       console_log("[Error] signo %d not handled", signo);

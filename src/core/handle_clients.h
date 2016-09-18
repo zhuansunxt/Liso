@@ -25,12 +25,15 @@ typedef struct {
 
 extern client_pool pool;
 
+/* -------- Client pool APIs -------- */
 void init_pool(int listenfd);
 void add_client_to_pool(int newfd);
 void handle_clients();
 void clear_client(int clientfd, int idx);
+void clear_pool();
 
 char* append_request(int, char *, ssize_t);
 size_t get_client_buffer_offset(int);
+void header_done(int);
 
 #endif //LISO_SERVER_H

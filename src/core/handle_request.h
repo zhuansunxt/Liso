@@ -13,7 +13,12 @@
 int handle_http_request(int, char*, ssize_t);
 void reply_to_client(int, char*);
 int check_http_version(Request *);
-int send_error(char*, char*, char*);
-int send_msg(char*, char*);
+//int send_error(char*, char*, char*);
+int send_response(char*, const char*, const char*);
+int send_header(char*, const char*, const char*);
+int send_msg(char*, const char*);
 
+void get_mime_type(const char*, char*);
+
+int do_head(Request *, char *);
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H
