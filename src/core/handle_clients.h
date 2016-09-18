@@ -32,6 +32,7 @@ void handle_clients();
 void clear_client_by_idx(int, int);
 void clear_client(int);
 void clear_pool();
+void reset_client_buffer_state(int);
 
 char* append_request(int, char *, ssize_t);
 size_t get_client_buffer_offset(int);

@@ -18,21 +18,25 @@ const char *server_str = "Liso/1.0";
 
 
 /*
- * Return 0 when the current connection should not be closed.
- * Return corresponding status code on inormal case (4xx, 5xx status code family).
+ * Return 0 when the current connection should be closed.
+ * Return 1 when the current connection should be keeped
  * Return -1 on internal error.
  * The caller of this function should check the return value:
- *   - If it's larger than 0, it means that server already gave a response to the client.
- *     The caller then should release all resources associated with that client.
- *   - If it's equal to 0, it means that http_handler expects more info from this current
- *     request, e.g. for POST method, only sees header but message body is not fully
- *     received.
- *   - If it's less than 0, the caller should handle the error condition.
+ *   - If 1, it means that persistent connection should be keeped.
+ *     Caller should reset client's state for receiving request.
+ *   - If 0, it means that the current connection should be closed.
+ *     Caller should clear client's state and free all associated
+ *     resources.
+ *   - If -1, the caller should handle the error type, clear
+ *     client's state and free all associated resources.
  */
 int handle_http_request(int clientfd, char *buf, ssize_t len){
 #ifdef DEBUG_VERBOSE
   console_log("[INFO][HTTP] Client %d Receiving request : %s\nLength: %d", clientfd, buf, strlen(buf));
 #endif
+
+  /* default return value */
+  int return_value = 1;
 
   /* reply buffer */
   char reply[BUF_SIZE];
@@ -45,10 +49,19 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   if (request == NULL) {
     /* if parsing fails, send back 400 error */
     send_response(reply, (char*)"400", (char*)"Bad Request");
+    send_msg(reply, clrf);
     reply_to_client(clientfd, reply);
-    free_request(request);
-    return 400;
+    return 0;   //connection should be closed when encoutering bad request.
   }
+
+  /* Check Connection header. If 'connection: close' is
+   * found, then shoud set return value to be 0, otherwise
+   * set return value to be 1
+   */
+  char connection_header_val[32];
+  memset(connection_header_val, 0, strlen(connection_header_val));
+  get_header_value(request, "Connection", connection_header_val);
+  if (!strcmp(connection_header_val, "close")) return_value = 0;
 
   /* Handle 505 Error: Version not supported */
   int correct_version;
@@ -56,44 +69,41 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   if (correct_version < 0) {
     /* if checking version fails, send back 505 error */
     send_response(reply, (char*)"505", (char*)"HTTP Version not supported");
+    send_msg(reply, clrf);
     reply_to_client(clientfd, reply);
     free_request(request);
-    return 505;
+    return return_value;
   }
 
   const char *method = request->http_method;
 
   if (!strcmp(method, "HEAD"))
   {
-    int head_ret = do_head(request, reply);
+    do_head(request, reply);
     reply_to_client(clientfd, reply);
     free_request(request);
-    return head_ret;
   }
   else if (!strcmp(method, "GET"))
   {
-    int get_ret = do_get(request, reply);
+    do_get(request, reply);
     reply_to_client(clientfd, reply);
     free_request(request);
-    return get_ret;
   }
   else if (!strcmp(method, "POST"))
   {
-    int post_ret = do_post(request, reply);
+    do_post(request, reply);
     reply_to_client(clientfd, reply);
     free_request(request);
-    return post_ret;
   }
   else
   {
     send_response(reply, (char*)"501", (char*)"Not Implemented");
     reply_to_client(clientfd, reply);
     free_request(request);
-    return 501;
   }
 
   // control should not reach here.
-  return 0;
+  return return_value;
 }
 
 /*
@@ -180,7 +190,7 @@ int do_head(Request * request, char* reply) {
   get_flmodified(fullpath, last_modified, 256);
 
   send_response(reply, "200", "OK");
-  send_header(reply, "Connection", "close");
+  //send_header(reply, "Connection", "close");
   send_header(reply, "Server", server_str);
   send_header(reply, "Date", curr_time);
   send_header(reply, "Content-Length", content_len_str);
@@ -218,7 +228,8 @@ void get_mime_type(const char *mime, char *type) {
 }
 
 /*
- * Get value given header name
+ * Get value given header name.
+ * If header name not found, hvalue param will not be set.
  */
 void get_header_value(Request *request, const char * hname, char *hvalue) {
   int i;

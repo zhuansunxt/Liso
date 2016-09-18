@@ -88,12 +88,13 @@ void handle_clients() {
         int http_res = handle_http_request(clientfd, client_buffer, header_len);
         console_log("[INFO] Client %d request result %d", clientfd, http_res);
 
-        if (http_res > 0) {
+        if (http_res == 1) {          /* Connection should be keeped alive */
+          reset_client_buffer_state(clientfd);
+        } else if (http_res == 0) {   /* Connection should be closed */
           clear_client(clientfd);
-        } else if (http_res == 0) {
-          /* TODO: keep client's state and expect more info */
-        } else if (http_res < 0) {
-          /* TODO: handle internal server error when handling http request */
+        } else if (http_res == -1) {  /* Internal error in http handler */
+          clear_client(clientfd);
+          /* TODO: error handling */
         }
 
         //clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
@@ -241,7 +242,7 @@ size_t get_client_buffer_offset(int client) {
 void set_header_received(int client) {
   int i, clientfd;
 
-  for(i = 0; i < FD_SETSIZE; i++) {
+  for (i = 0; i < FD_SETSIZE; i++) {
     clientfd = p->client_fd[i];
     if (clientfd == client) {
       p->received_header[i] = 1;
@@ -253,4 +254,22 @@ void set_header_received(int client) {
   console_log("[INFO] Client not found when setting received header to be true");
 #endif
   dump_log("[INFO] Client not found when setting received header to be true");
+}
+
+void reset_client_buffer_state(int client) {
+  int i, clientfd;
+
+  for (i = 0; i < FD_SETSIZE; i++) {
+    clientfd = p->client_fd[i];
+    if (clientfd == client) {
+      memset(p->client_buffer[i], 0, p->buffer_cap[i]);
+      p->buffer_offset[i] = 0;
+      p->received_header[i] = 0;
+      return ;
+    }
+  }
+#ifdef DEBUG_VERBOSE
+  console_log("[INFO] Client not found when resetting client buffer state");
+#endif
+  dump_log("[INFO] Client not found when resetting client buffer state");
 }
