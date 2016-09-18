@@ -88,7 +88,15 @@ void handle_clients() {
         int http_res = handle_http_request(clientfd, client_buffer, header_len);
         console_log("[INFO] Client %d request result %d", clientfd, http_res);
 
-        clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
+        if (http_res > 0) {
+          clear_client(clientfd);
+        } else if (http_res == 0) {
+          /* TODO: keep client's state and expect more info */
+        } else if (http_res < 0) {
+          /* TODO: handle internal server error when handling http request */
+        }
+
+        //clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       }
       else if (nbytes <= 0) {
         if (nbytes == 0) {    /* Connection closed by client */
@@ -97,8 +105,12 @@ void handle_clients() {
           if (errno == EINTR) continue;
           dump_log("[Client pool] Error on recv() from client on socket %d", clientfd);
         }
-        clear_client(clientfd, i);
+        clear_client_by_idx(clientfd, i);
       }
+
+      /* This minus one operation should be put here, and is the only
+       * place nready is substracted: after each loop iteration, current client
+       * should be removed from master set and be selected again. */
       p->nready--;
     }
 
@@ -108,7 +120,7 @@ void handle_clients() {
 /*
  * Remove client from pool and release all corrsponding resources.
  */
-void clear_client(int client_fd, int idx){
+void clear_client_by_idx(int client_fd, int idx){
   close(client_fd);
   FD_CLR(client_fd, &p->master);
   p->client_fd[idx] = -1;
@@ -118,6 +130,31 @@ void clear_client(int client_fd, int idx){
   p->received_header[idx] = 0;
 }
 
+/* Clear resource associated with client */
+void clear_client(int client) {
+  int idx, cliendfd;
+
+  for (idx = 0; idx < FD_SETSIZE; idx++) {
+    cliendfd = p->client_fd[idx];
+    if (cliendfd == client) {
+      /* Free resources and reset all states */
+      close(cliendfd);
+      FD_CLR(cliendfd, &p->master);
+      p->client_fd[idx] = -1;
+      free(p->client_buffer[idx]);
+      p->buffer_offset[idx] = -1;
+      p->buffer_cap[idx] = 0;
+      p->received_header[idx] = 0;
+      return ;
+    }
+  }
+  // no such client to be found
+#ifdef DEBUG_VERBOSE
+  console_log("[INFO] Client not found when clearing client %d", client);
+#endif
+  dump_log("[INFO] Client not found when clearing client %d", client);
+}
+
 /*
  * Clear pool. Only call this when server crash.
  */
@@ -125,7 +162,7 @@ void clear_pool() {
   int i, clientfd;
   for (i = 0; i < FD_SETSIZE; i++) {
     clientfd = p->client_fd[i];
-    if (clientfd > 0) clear_client(clientfd, i);
+    if (clientfd > 0) clear_client_by_idx(clientfd, i);
   }
 }
 

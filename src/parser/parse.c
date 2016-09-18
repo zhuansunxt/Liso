@@ -3,7 +3,7 @@
 extern void set_parsing_options(char *buf, size_t siz, Request *parsing_request);
 extern int yyparse(void);
 
-const size_t default_header_list_size = 4;
+const size_t default_header_list_size = 16;
 /**
  * Given a char buffer returns the parsed request headers.
  * Return fulfilled buffer on success.

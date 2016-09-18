@@ -20,7 +20,14 @@ const char *server_str = "Liso/1.0";
 /*
  * Return 0 when the current connection should not be closed.
  * Return corresponding status code on inormal case (4xx, 5xx status code family).
- * Return -1 on internal error
+ * Return -1 on internal error.
+ * The caller of this function should check the return value:
+ *   - If it's larger than 0, it means that server already gave a response to the client.
+ *     The caller then should release all resources associated with that client.
+ *   - If it's equal to 0, it means that http_handler expects more info from this current
+ *     request, e.g. for POST method, only sees header but message body is not fully
+ *     received.
+ *   - If it's less than 0, the caller should handle the error condition.
  */
 int handle_http_request(int clientfd, char *buf, ssize_t len){
 #ifdef DEBUG_VERBOSE
@@ -183,6 +190,14 @@ int do_head(Request * request, char* reply) {
   return 200;
 }
 
+int do_get(Request *request, char* reply) {
+  return 0;
+}
+
+int do_post(Request *request, char* reply) {
+  return 0;
+}
+
 /*
  * Get accordingly MIME type given file extension name
  */
@@ -209,7 +224,7 @@ void get_header_value(Request *request, const char * hname, char *hvalue) {
   int i;
 
   for (i = 0; i < request->header_count; i++) {
-    if (!strcmp(request->headers[i].header_name)) {
+    if (!strcmp(request->headers[i].header_name, hname)) {
       strcpy(hvalue, request->headers[i].header_value);
       return;
     }
@@ -223,6 +238,6 @@ void get_header_value(Request *request, const char * hname, char *hvalue) {
  * Free parsed request resources
  */
 void free_request(Request *request) {
-  free(request->header_count);
+  free(request->headers);
   free(request);
 }

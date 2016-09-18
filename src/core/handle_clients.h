@@ -29,7 +29,8 @@ extern client_pool pool;
 void init_pool(int listenfd);
 void add_client_to_pool(int newfd);
 void handle_clients();
-void clear_client(int clientfd, int idx);
+void clear_client_by_idx(int, int);
+void clear_client(int);
 void clear_pool();
 
 char* append_request(int, char *, ssize_t);
