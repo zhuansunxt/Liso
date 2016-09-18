@@ -74,42 +74,34 @@ void handle_clients() {
       set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
       nbytes = recv(clientfd, buf, BUF_SIZE, 0);
 
-      if (nbytes > 0)
-      {
+      if (nbytes > 0) {
         dump_log("[Client pool] Receive %d bytes from client on socket %d", nbytes, clientfd);
 
         char *client_buffer = append_request(clientfd, buf, nbytes);
-        size_t header_len = get_client_buffer_offset(clientfd);
-
-#ifdef DEBUG_VERBOSE
-        console_log("[INFO] Client %d current buffer length : %d", clientfd, header_len);
-#endif
 
         char *header_end_id = "\r\n\r\n";
         char *header_end = strstr(client_buffer, header_end_id);
+        size_t header_len = get_client_buffer_offset(clientfd);
         if (header_end == NULL && header_len < BUF_SIZE) continue;   /* HTTP header not complete yet */
 
-        header_done(clientfd);
+        set_header_received(clientfd);
         int http_res = handle_http_request(clientfd, client_buffer, header_len);
+        console_log("[INFO] Client %d request result %d", clientfd, http_res);
 
-        /* TODO: based on <http_res>, determine whether to close the connection and release resources */
-#ifdef DEBUG_VERBOSE
-        console_log("[INFO] Client %d HTTP handle result: %d", clientfd, http_res);
-#endif
         clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       }
-      else if (nbytes <= 0)
-      {
+      else if (nbytes <= 0) {
         if (nbytes == 0) {    /* Connection closed by client */
           dump_log("[Client pool] Connection closed by client on socket %d", clientfd);
         } else {
-          if (errno == EINTR) continue;   /* TODO: reason about this */
+          if (errno == EINTR) continue;
           dump_log("[Client pool] Error on recv() from client on socket %d", clientfd);
         }
         clear_client(clientfd, i);
       }
       p->nready--;
-    } // End handling readable descriptor.
+    }
+
   } // End for loop.
 } // End function.
 
@@ -141,8 +133,9 @@ void clear_pool() {
  * Append received content to client's buffer
  */
 char* append_request(int client, char *buf, ssize_t len) {
-  int i;
-  int clientfd;
+  int i,clientfd;
+  int expansion;
+
   for (i = 0; (i <= p->maxi) && p->nready > 0; i++) {
     clientfd = p->client_fd[i];
     if (clientfd == client) {
@@ -150,19 +143,27 @@ char* append_request(int client, char *buf, ssize_t len) {
       size_t current_capacity = p->buffer_cap[i];
 
 #ifdef DEBUG_VERBOSE
+      console_log("[INFO] Trying to append request to client buffer...");
       console_log("[INFO] Client %d buffer capacity %d", clientfd, current_capacity);
+      console_log("[INFO] Client %d need buffer space %d (%d offset + %d nbytes)",
+                  clientfd, (offset+len), offset, len);
 #endif
 
       /* dynamically allocate space */
       if ((offset+len) > current_capacity) {
-        p->client_buffer[i] = realloc(p->client_buffer[i], current_capacity*2);
+        /* Determine expansion:  keep doubling current capacity until the expansion size
+           is larger than the size of needed space, which is (offset+len). */
+        expansion = current_capacity;
+        while ((offset+len) > expansion)  expansion *= 2;
+
+        p->client_buffer[i] = realloc(p->client_buffer[i], expansion);
         if (p->client_buffer[i] == NULL) {
           err_sys("Memory can not be allocated");
         }
-        p->buffer_cap[i] = current_capacity * 2;
+        p->buffer_cap[i] = expansion;
 #ifdef DEBUG_VERBOSE
         console_log("[INFO] Client %d buffer capacity expands from %d bytes to %d bytes",
-                    clientfd, current_capacity, current_capacity*2);
+                    clientfd, current_capacity, expansion);
 #endif
       }
 
@@ -180,7 +181,7 @@ char* append_request(int client, char *buf, ssize_t len) {
 }
 
 /*
- * Get client buffer's offset
+ * Get client buffer's offset, which is current length of request content.
  */
 size_t get_client_buffer_offset(int client) {
   int i;
@@ -197,7 +198,10 @@ size_t get_client_buffer_offset(int client) {
   return 0;
 }
 
-void header_done(int client) {
+/*
+ * set a client's state from <header not received> to <header received>
+ */
+void set_header_received(int client) {
   int i, clientfd;
 
   for(i = 0; i < FD_SETSIZE; i++) {

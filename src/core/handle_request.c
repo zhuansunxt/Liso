@@ -109,17 +109,11 @@ int check_http_version(Request *req){
   return 0;
 }
 
-/*
- * For develop convenience, send random msg to client
- */
 int send_msg(char *reply, const char* msg) {
   strcat(reply, msg);
   return 0;
 }
 
-/*
- * Send 4xx/5xx family reply
- */
 int send_response(char *reply, const char *code, const char*reason) {
   sprintf(reply, "%s%s%s%s%s%s", http_version, sp, code, sp, reason, clrf);
   return 0;
@@ -203,3 +197,19 @@ void get_mime_type(const char *mime, char *type) {
   }
 }
 
+/*
+ * Get value given header name
+ */
+void get_header_value(Request *request, const char * hname, char *hvalue) {
+  int i;
+
+  for (i = 0; i < request->header_count; i++) {
+    if (!strcmp(request->headers[i].header_name)) {
+      strcpy(hvalue, request->headers[i].header_value);
+      return;
+    }
+  }
+#ifdef DEBUG_VERBOSE
+  console_log("[INFO][ERROR] Header name %s not found in request", hname);
+#endif
+}

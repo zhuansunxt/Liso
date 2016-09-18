@@ -34,6 +34,6 @@ void clear_pool();
 
 char* append_request(int, char *, ssize_t);
 size_t get_client_buffer_offset(int);
-void header_done(int);
+void set_header_received(int);
 
 #endif //LISO_SERVER_H

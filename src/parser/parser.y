@@ -198,6 +198,15 @@ request_header: token ows t_colon ows text ows t_crlf {
   strcpy(parsing_request->headers[parsing_request->header_count].header_name, $1);
 	strcpy(parsing_request->headers[parsing_request->header_count].header_value, $5);
 	parsing_request->header_count++;
+
+  /* Dynamically resizing space for headers */
+  if (parsing_request->header_count == parsing_request->header_capacity) {
+  	parsing_request->header_capacity *= 2;
+  	parsing_request->headers = 
+  			(Request_header *)realloc(parsing_request->headers, sizeof(Request_header)*parsing_request->header_capacity);
+  	if (parsing_request->headers == NULL) err_sys("Can not allocate space for HTTP headers");
+  	console_log("[INFO][PARSER]Expand header cap to %d", parsing_request->header_capacity);
+  }
 };
 
 request_headers: request_headers request_header {}
@@ -206,10 +215,7 @@ request_headers: request_headers request_header {}
 request: request_line request_headers t_crlf {
 	YPRINTF("parsing_request: Matched Success.\n");
 	return SUCCESS; };
-//} | request_line request_headers t_crlf token {
-//  YPRINTF("parsing_request: Matched Success.\n");
-//  return SUCCESS;
-//};
+
 
 %%
 

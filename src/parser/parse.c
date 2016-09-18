@@ -1,9 +1,9 @@
 #include "parse.h"
-#include "../utilities/commons.h"
 
 extern void set_parsing_options(char *buf, size_t siz, Request *parsing_request);
 extern int yyparse(void);
 
+const size_t default_header_list_size = 4;
 /**
  * Given a char buffer returns the parsed request headers.
  * Return fulfilled buffer on success.
@@ -55,16 +55,20 @@ Request * parse(char *buffer, int size) {
   //Valid End State
 	if (state == STATE_CRLFCRLF) {
 		Request *request = (Request *) malloc(sizeof(Request));
-    request->header_count=0;
-    //TODO: Resizing this correctly
-    request->headers = (Request_header *) malloc(sizeof(Request_header)*8);
+    request->header_count = 0;
+    request->header_capacity = default_header_list_size;
+
+    /* Initially allocate space for at least 16 headers.
+     * If need more, dynamically realloc during parsing. */
+    request->headers = (Request_header *)
+            malloc(sizeof(Request_header)*default_header_list_size);
 		set_parsing_options(buf, i, request);
 
 		if (yyparse() == SUCCESS) {
       return request;
 		}
 	}
-  //TODO Handle Malformed Requests
-  printf("Parsing Failed\n");
+
+  console_log("[INFO][PARSER]Parsing Failed\n");
   return NULL;
 }

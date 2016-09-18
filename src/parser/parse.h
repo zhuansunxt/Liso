@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "../utilities/commons.h"
 
 #define SUCCESS 0
 
@@ -19,6 +20,7 @@ typedef struct
 	char http_uri[4096];
 	Request_header *headers;
 	int header_count;
+  int header_capacity;
 } Request;
 
 Request* parse(char *buffer, int size);
