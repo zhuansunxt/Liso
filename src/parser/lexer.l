@@ -237,4 +237,4 @@ token_char      [\x0-\x7f]{-}[\x0-\x1f\x7f]{-}[\{\}\(\)\<\>@\,;:\\\"/\[\]?=\x20\
 %%
 
 int yywrap(void) {
-return 0; }
+return 1; }

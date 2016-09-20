@@ -4,7 +4,7 @@ extern void set_parsing_options(char *buf, size_t siz, Request *parsing_request)
 extern int yyparse(void);
 //extern YY_FLUSH_BUFFER;
 //extern void yy_flush_buffer(void);
-//extern void yyrestart(void);
+extern void yyrestart(FILE *);
 //extern void yy_switch_to_buffer(YY_BUFFER_STATE);
 
 const size_t default_header_list_size = 16;
@@ -66,9 +66,12 @@ Request * parse(char *buffer, int size) {
      * If need more, dynamically realloc during parsing. */
     request->headers = (Request_header *)
             malloc(sizeof(Request_header)*default_header_list_size);
-    set_parsing_options(buf, i, request);
 
-//    YY_FLUSH_BUFFER;
+#ifdef DEBUG_VERBOSE
+    console_log("[INFO][PARSER]restart on every parsing invocation");
+#endif
+    yyrestart(NULL);
+    set_parsing_options(buf, i, request);
 
     if (yyparse() == SUCCESS) {
       return request;
