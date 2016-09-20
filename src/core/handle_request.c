@@ -109,8 +109,12 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   else
   {
     send_response(reply, (char*)"501", (char*)"Not Implemented");
+    send_header(reply, "Connection", "close");
+    send_msg(reply, clrf);
     reply_to_client(clientfd, reply);
     free_request(request);
+    /* Close the socket when 501 encountered */
+    return_value = 0;
   }
 
   return return_value;
