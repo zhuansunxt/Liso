@@ -180,3 +180,48 @@ void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
   curr_gmt_time = gmtime(&st.st_mtime);
   strftime(last_mod_time, buf_size, "%a, %d %b %Y %H:%M:%S %Z", curr_gmt_time);
 }
+
+/*
+ * Write whole file content to given socket descriptor given the file path.
+ * Return 0 on success, return -1 on sys error.
+ */
+int write_file_to_socket(int clientfd, char *path) {
+  char *file_to_send;
+  size_t file_len;
+
+  int fd = open(path, O_RDONLY, (mode_t)0600);
+  if (fd == -1) {
+    dump_log("[IO][ERROR] Error when opening file %s for reading", path);
+    return -1;
+  }
+
+  struct stat file_st = {0};
+  if ((fstat(fd, &file_st)) == -1) {
+    dump_log("[IO][ERROR] Error when getting status of file %s for reading", path);
+    close(fd);
+    return -1;
+  }
+
+  file_len = file_st.st_size;
+  if (file_len <= 0) {
+    dump_log("[IO][ERROR] File %s is empty. Noting to read from", path);
+    close(fd);
+    return -1;
+  }
+
+  file_to_send = mmap(0, file_len, PROT_READ, MAP_SHARED, fd, 0);
+  if (file_to_send == MAP_FAILED) {
+    close(fd);
+    dump_log("[IO][ERROR] File %s mapping to RAM fails: %s", path, strerror(errno));
+    return -1;
+  }
+
+  Sendn(clientfd, file_to_send, file_len);
+  if (munmap(file_to_send, file_len) == -1) {
+    close(fd);
+    dump_log("[IO][ERROR] File %d can not be unmapped", path);
+    return -1;
+  }
+  close(fd);
+  return 0;
+}

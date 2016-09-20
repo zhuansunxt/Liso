@@ -79,10 +79,16 @@ void handle_clients() {
 
         char *client_buffer = append_request(clientfd, buf, nbytes);
 
+        /* Check whether received request content has complete HTTP header.
+         * If <clrfclrf> is detected, *or* current header_len is larger than
+         * BUF_SIZE(8192), we send received accumulated buffer to HTTP handler.*/
         char *header_end_id = "\r\n\r\n";
         char *header_end = strstr(client_buffer, header_end_id);
         size_t header_len = get_client_buffer_offset(clientfd);
-        if (header_end == NULL && header_len < BUF_SIZE) continue;   /* HTTP header not complete yet */
+        if (header_end == NULL && header_len < BUF_SIZE) continue;
+#ifdef DEBUG_VERBOSE
+        print_pool();
+#endif
 
         set_header_received(clientfd);
         int http_res = handle_http_request(clientfd, client_buffer, header_len);
@@ -91,12 +97,18 @@ void handle_clients() {
         if (http_res == 1) {          /* Connection should be keeped alive */
           reset_client_buffer_state(clientfd);
         } else if (http_res == 0) {   /* Connection should be closed */
+#ifdef DEBUG_VERBOSE
+          console_log("[INFO] Clearing client %d state", clientfd);
+#endif
           clear_client(clientfd);
         } else if (http_res == -1) {  /* Internal error in http handler */
           clear_client(clientfd);
           /* TODO: error handling */
         }
 
+#ifdef DEBUG_VERBOSE
+        print_pool();
+#endif
         //clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       }
       else if (nbytes <= 0) {
@@ -167,6 +179,19 @@ void clear_pool() {
   }
 }
 
+void print_pool() {
+  int i;
+  console_log("***********************Current Pool State************************");
+  for (i = 0; i <= p->maxi; i++) {
+    console_log("<Position %d>", i);
+    console_log("---> Clientfd: %d", p->client_fd[i]);
+    console_log("---> Client Buffer Cap: %d", p->buffer_cap[i]);
+    console_log("---> Client Buffer Offset: %d", p->buffer_offset[i]);
+    console_log("---> Received Header Yet? : %d", (int)p->received_header[i]);
+  }
+  console_log("*****************************************************************");
+}
+
 /*
  * Append received content to client's buffer
  */
@@ -180,12 +205,12 @@ char* append_request(int client, char *buf, ssize_t len) {
       size_t offset = p->buffer_offset[i];
       size_t current_capacity = p->buffer_cap[i];
 
-#ifdef DEBUG_VERBOSE
-      console_log("[INFO] Trying to append request to client buffer...");
-      console_log("[INFO] Client %d buffer capacity %d", clientfd, current_capacity);
-      console_log("[INFO] Client %d need buffer space %d (%d offset + %d nbytes)",
-                  clientfd, (offset+len), offset, len);
-#endif
+//#ifdef DEBUG_VERBOSE
+//      console_log("[INFO] Trying to append request to client buffer...");
+//      console_log("[INFO] Client %d buffer capacity %d", clientfd, current_capacity);
+//      console_log("[INFO] Client %d need buffer space %d (%d offset + %d nbytes)",
+//                  clientfd, (offset+len), offset, len);
+//#endif
 
       /* dynamically allocate space */
       if ((offset+len) > current_capacity) {
@@ -199,10 +224,10 @@ char* append_request(int client, char *buf, ssize_t len) {
           err_sys("Memory can not be allocated");
         }
         p->buffer_cap[i] = expansion;
-#ifdef DEBUG_VERBOSE
-        console_log("[INFO] Client %d buffer capacity expands from %d bytes to %d bytes",
-                    clientfd, current_capacity, expansion);
-#endif
+//#ifdef DEBUG_VERBOSE
+//        console_log("[INFO] Client %d buffer capacity expands from %d bytes to %d bytes",
+//                    clientfd, current_capacity, expansion);
+//#endif
       }
 
       strncpy(p->client_buffer[i]+offset, buf, len);

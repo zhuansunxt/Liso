@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <netinet/in.h>
 #include <ctype.h>
 #include <time.h>
@@ -33,6 +34,7 @@ void str_tolower(char *);
 void get_curr_time(char *, size_t);
 size_t get_file_len(const char*);
 void get_flmodified(const char*, char *, size_t);
+int write_file_to_socket(int, char *);
 /*--------------- End File System APIs -----------*/
 
 #endif //LISO_IO_H

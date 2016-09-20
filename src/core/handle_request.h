@@ -19,13 +19,14 @@ int check_http_version(Request *);
 int send_response(char*, const char*, const char*);
 int send_header(char*, const char*, const char*);
 int send_msg(char*, const char*);
+int sen_msgbody(int, char *);
 
 void get_mime_type(const char*, char*);
 void get_header_value(Request*, const char*, char*);
 
 void free_request(Request *);
 
-int do_head(Request *, char *);
-int do_get(Request *, char *);    //TODO
-int do_post(Request *, char *);   //TODO
+int do_head(int client, Request *, char *);
+int do_get(int client, Request *, char *);
+int do_post(int client, Request *, char *);
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H
