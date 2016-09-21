@@ -26,7 +26,7 @@ void get_header_value(Request*, const char*, char*);
 
 void free_request(Request *);
 
-int do_head(int client, Request *, char *);
-int do_get(int client, Request *, char *);
-int do_post(int client, Request *, char *);
+int do_head(int client, Request *, char *, int);
+int do_get(int client, Request *, char *, int);
+int do_post(int client, Request *, char *, int);
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H

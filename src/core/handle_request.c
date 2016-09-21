@@ -73,9 +73,13 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
    * set return value to be 1
    */
   char connection_header_val[32];
+  int last_conn = 0;
   memset(connection_header_val, 0, sizeof(connection_header_val));
   get_header_value(request, "Connection", connection_header_val);
-  if (!strcmp(connection_header_val, "close")) return_value = 0;
+  if (!strcmp(connection_header_val, "close")) {
+    return_value = 0;
+    last_conn = 1;
+  }
 
   /* Handle 505 Error: Version not supported */
   int correct_version;
@@ -94,17 +98,17 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
 
   if (!strcmp(method, "HEAD"))
   {
-    do_head(clientfd, request, reply);
+    do_head(clientfd, request, reply, last_conn);
     free_request(request);
   }
   else if (!strcmp(method, "GET"))
   {
-    do_get(clientfd, request, reply);
+    do_get(clientfd, request, reply, last_conn);
     free_request(request);
   }
   else if (!strcmp(method, "POST"))
   {
-    do_post(clientfd, request, reply);
+    do_post(clientfd, request, reply, last_conn);
     free_request(request);
   }
   else
@@ -171,7 +175,7 @@ int send_msgbody(int client, char *fullpath) {
  * Handle HEAD request.
  * Return status code.
  */
-int do_head(int client, Request * request, char* reply) {
+int do_head(int client, Request * request, char* reply, int last_conn) {
   char fullpath[4096];
   char extension[64];
   char mime_type[64];
@@ -220,13 +224,16 @@ int do_head(int client, Request * request, char* reply) {
   send_header(reply, "Content-Length", content_len_str);
   send_header(reply, "Content-Type", mime_type);
   send_header(reply, "Last-modified", last_modified);
-  //send_header(reply, "Connection", "keep-alive");
+  if (last_conn)
+    send_header(reply, "connection", "close");
+  else
+    send_header(reply, "connection", "keep-alive");
   send_msg(reply, clrf);
   reply_to_client(client, reply);
   return 200;
 }
 
-int do_get(int client, Request *request, char* reply) {
+int do_get(int client, Request *request, char* reply, int last_conn) {
   char fullpath[4096];
   char extension[64];
   char mime_type[64];
@@ -272,6 +279,10 @@ int do_get(int client, Request *request, char* reply) {
   send_header(reply, "Content-Length", content_len_str);
   send_header(reply, "Content-Type", mime_type);
   send_header(reply, "Last-modified", last_modified);
+  if (last_conn)
+    send_header(reply, "Connection", "close");
+  else
+    send_header(reply, "Connection", "keep-alive");
   send_msg(reply, clrf);
   reply_to_client(client, reply);
   if (send_msgbody(client, fullpath) < 0) {
@@ -283,7 +294,7 @@ int do_get(int client, Request *request, char* reply) {
   return 0;
 }
 
-int do_post(int client, Request *request, char* reply) {
+int do_post(int client, Request *request, char* reply, int last_conn) {
   char content_length[32];
   memset(content_length, 0, sizeof(content_length));
   get_header_value(request, "Content-Length", content_length);
