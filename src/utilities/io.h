@@ -13,6 +13,7 @@
 #include "commons.h"
 
 #define SOCKET_API_ERR_MSG "[Error in socket_api]"
+#define MIN(a,b) (((a)<(b))?(a):(b))
 
 /*--------------- Socket APIs ---------------*/
 typedef struct sockaddr sockaddr;

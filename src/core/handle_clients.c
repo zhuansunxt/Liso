@@ -54,7 +54,6 @@ void add_client_to_pool(int newfd) {
   if (i == FD_SETSIZE) {
     /* Coundn't find available slot in pool */
     console_log("[Client pool] Too many clients! No available slot for new client connection");
-    //TODO: handle too many client case
   }
 }
 

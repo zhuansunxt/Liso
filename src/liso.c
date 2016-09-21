@@ -57,6 +57,7 @@ int main(int args, char **argv) {
   while(1) {
     dump_log("[Main] Selecting...");
     pool.read_fds = pool.master;
+    pool.write_fds = pool.master;
     pool.nready = select(pool.maxfd+1, &pool.read_fds, NULL, NULL, NULL);
 
     /* Handle exception in select, ignore all inormal cases */

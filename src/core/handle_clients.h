@@ -11,12 +11,13 @@
 typedef struct {
   fd_set master;              /* all descritors */
   fd_set read_fds;            /* all ready-to-read descriptors */
+  fd_set write_fds;           /* all ready-to_write descriptors */
   int maxfd;                  /* maximum value of all descriptors */
   int nready;                 /* number of ready descriptors */
   int maxi;                   /* maximum index of available slot */
   int client_fd[FD_SETSIZE];  /* client slots */
 
-  /* newly added in CP2 */
+  /* Recv state */
   char *client_buffer[FD_SETSIZE];  /* buffer contains client's request content */
   size_t buffer_offset[FD_SETSIZE]; /* current position of client's buffer */
   size_t buffer_cap[FD_SETSIZE];    /* current allocated size of client's buffer */

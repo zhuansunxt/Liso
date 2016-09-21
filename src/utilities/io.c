@@ -185,7 +185,7 @@ void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
  * Write whole file content to given socket descriptor given the file path.
  * Return 0 on success, return -1 on sys error.
  */
-/*int write_file_to_socket(int clientfd, char *path) {
+int write_file_to_socket(int clientfd, char *path) {
   char *file_to_send;
   size_t file_len;
 
@@ -216,7 +216,23 @@ void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
     return -1;
   }
 
-  Sendn(clientfd, file_to_send, file_len);
+  fd_set writefd;
+  FD_ZERO(&writefd);
+  FD_SET(clientfd, &writefd);
+  size_t send_granularity = BUF_SIZE;
+  size_t sent_lenth = 0;
+  while (sent_lenth < file_len) {
+    select(clientfd+1, NULL, &writefd, NULL, NULL);
+    if (FD_ISSET(clientfd, &writefd)) {
+      size_t len = MIN(send_granularity, file_len-sent_lenth);
+      Sendn(clientfd, file_to_send, len);
+      sent_lenth += len;
+      file_to_send += len;
+    }
+    FD_ZERO(&writefd);
+    FD_SET(clientfd, &writefd);
+  }
+
   if (munmap(file_to_send, file_len) == -1) {
     close(fd);
     dump_log("[IO][ERROR] File %d can not be unmapped", path);
@@ -224,16 +240,16 @@ void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
   }
   close(fd);
   return 0;
-}*/
-
-/* Another version */
-int write_file_to_socket(int clientfd, char *path) {
-  char buf[BUF_SIZE];
-  memset(buf, 0, BUF_SIZE);
-  int fd = open(path, O_RDONLY, (mode_t)0600);
-  ssize_t nread;
-  while((nread = read(fd, buf, BUF_SIZE)) > 0) {
-    Sendn(clientfd, buf, nread);
-  }
-  return 0;
 }
+
+//0/* Another version */
+//int write_file_to_socket(int clientfd, char *path) {
+//  char buf[BUF_SIZE];
+//  memset(buf, 0, BUF_SIZE);
+//  int fd = open(path, O_RDONLY, (mode_t)0600);
+//  ssize_t nread;
+//  while((nread = read(fd, buf, BUF_SIZE)) > 0) {
+//    Sendn(clientfd, buf, nread);
+//  }
+//  return 0;
+//}
