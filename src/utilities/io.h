@@ -1,6 +1,7 @@
 #ifndef LISO_IO_H
 #define LISO_IO_H
 
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>

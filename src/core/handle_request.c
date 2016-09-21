@@ -83,10 +83,11 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   if (correct_version < 0) {
     /* if checking version fails, send back 505 error */
     send_response(reply, (char*)"505", (char*)"HTTP Version not supported");
+    send_header(reply, "Connection", "close");
     send_msg(reply, clrf);
     reply_to_client(clientfd, reply);
     free_request(request);
-    return return_value;
+    return 0;
   }
 
   const char *method = request->http_method;
@@ -109,12 +110,9 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   else
   {
     send_response(reply, (char*)"501", (char*)"Not Implemented");
-    send_header(reply, "Connection", "close");
     send_msg(reply, clrf);
     reply_to_client(clientfd, reply);
     free_request(request);
-    /* Close the socket when 501 encountered */
-    return_value = 0;
   }
 
   return return_value;
@@ -189,6 +187,8 @@ int do_head(int client, Request * request, char* reply) {
   /* Check 404 Not Found error */
   if (access(fullpath, F_OK) < 0) {
     send_response(reply, "404", "Not Found");
+    send_msg(reply, clrf);
+    reply_to_client(client, reply);
     return 0;
   }
 
@@ -214,6 +214,7 @@ int do_head(int client, Request * request, char* reply) {
   send_header(reply, "Content-Length", content_len_str);
   send_header(reply, "Content-Type", mime_type);
   send_header(reply, "Last-modified", last_modified);
+  //send_header(reply, "Connection", "keep-alive");
   send_msg(reply, clrf);
   reply_to_client(client, reply);
   return 200;
