@@ -122,6 +122,9 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
  * Reply to client
  */
 void reply_to_client(int client, char *reply) {
+#ifdef DEBUG_VERBOSE
+  console_log("[INFO][REPLIER] Reply to %d\n%s", client, reply);
+#endif
   Sendn(client, reply, strlen(reply));
 }
 
@@ -186,6 +189,9 @@ int do_head(int client, Request * request, char* reply) {
 
   /* Check 404 Not Found error */
   if (access(fullpath, F_OK) < 0) {
+#ifdef  DEBUG_VERBOSE
+    console_log("File %s can not be accessed", fullpath);
+#endif
     send_response(reply, "404", "Not Found");
     send_msg(reply, clrf);
     reply_to_client(client, reply);

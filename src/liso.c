@@ -32,10 +32,12 @@ int main(int args, char **argv) {
   signal(SIGINT, sig_handler);
 
   /* Paramters from terminal */
+  //<HTTP port> <HTTPS port> <log file> <lock file> <www folder>
+  //<CGI script path> <private key file> <certificate file>
   int port = atoi(argv[1]);   /* port param */
-  LOGFILE = argv[2];          /* log file param */
+  LOGFILE = argv[3];          /* log file param */
   init_log();
-  WWW_FOLDER = argv[3];       /* www folder param */
+  WWW_FOLDER = argv[5];       /* www folder param */
   create_folder(WWW_FOLDER, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 
   /* Temp parameters */
