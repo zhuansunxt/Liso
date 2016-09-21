@@ -185,7 +185,7 @@ void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
  * Write whole file content to given socket descriptor given the file path.
  * Return 0 on success, return -1 on sys error.
  */
-int write_file_to_socket(int clientfd, char *path) {
+/*int write_file_to_socket(int clientfd, char *path) {
   char *file_to_send;
   size_t file_len;
 
@@ -209,7 +209,7 @@ int write_file_to_socket(int clientfd, char *path) {
     return -1;
   }
 
-  file_to_send = mmap(0, file_len, PROT_READ, MAP_SHARED, fd, 0);
+  file_to_send = mmap(0, file_len, PROT_READ, MAP_PRIVATE, fd, 0);
   if (file_to_send == MAP_FAILED) {
     close(fd);
     dump_log("[IO][ERROR] File %s mapping to RAM fails: %s", path, strerror(errno));
@@ -223,5 +223,17 @@ int write_file_to_socket(int clientfd, char *path) {
     return -1;
   }
   close(fd);
+  return 0;
+}*/
+
+/* Another version */
+int write_file_to_socket(int clientfd, char *path) {
+  char buf[BUF_SIZE];
+  memset(buf, 0, BUF_SIZE);
+  int fd = open(path, O_RDONLY, (mode_t)0600);
+  ssize_t nread;
+  while((nread = read(fd, buf, BUF_SIZE)) > 0) {
+    Sendn(clientfd, buf, nread);
+  }
   return 0;
 }
