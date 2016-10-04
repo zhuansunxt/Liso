@@ -73,13 +73,12 @@ void handle_clients() {
         dump_log("[Client pool] Receive %d bytes from client on socket %d", nbytes, clientfd);
 
         append_content_dbuffer(p->client_buffer[i], buf, nbytes);
-        char *client_buffer = p->client_buffer[i]->buffer;
 
         /* Check whether received request content has complete HTTP header.
          * If <clrfclrf> is detected, *or* current header_len is larger than
          * BUF_SIZE(8192), we send received accumulated buffer to HTTP handler.*/
 
-        size_t header_recv_offset = handle_recv_header(clientfd, client_buffer);
+        size_t header_recv_offset = handle_recv_header(clientfd, p->client_buffer[i]->buffer);
         if (header_recv_offset == 0) {
           continue;
         } else if (header_recv_offset == -1) {
@@ -88,8 +87,8 @@ void handle_clients() {
         }
 
         set_header_received(clientfd, header_recv_offset);
-        ssize_t header_len = get_client_buffer_offset(clientfd);
-        int http_res = handle_http_request(clientfd, client_buffer, header_len);
+
+        int http_res = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset);
         console_log("[INFO] Client %d request result %d", clientfd, http_res);
 
         if (http_res == 1) {          /* Connection should be keeped alive */
@@ -116,7 +115,12 @@ void handle_clients() {
       p->nready--;
     } else if (FD_ISSET(clientfd, &p->write_fds)){
       /* Handle clients that are ready to be response to */
-
+      set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
+      dynamic_buffer *client_buffer = p->client_buffer[i];
+      size_t send_granularity = 8192;
+      size_t send_len = MIN(send_granularity, client_buffer->offset-client_buffer->send_offset);
+      Sendn(clientfd, client_buffer->buffer, send_len);
+      client_buffer->send_offset += send_len;
     } else {
       /* Can not handle this type of event */
       dump_log("[handle_client handle_client()] Can not deal with this type of event");
@@ -136,7 +140,6 @@ void clear_client_by_idx(int client_fd, int idx){
 
   /* free client buffer */
   free_dbuffer(p->client_buffer[idx]);
-  free(p->client_buffer[idx]);
   p->received_header[idx] = 0;
 }
 
@@ -156,7 +159,6 @@ void clear_client(int client) {
 
       /* free client buffer */
       free_dbuffer(p->client_buffer[idx]);
-      free(p->client_buffer[idx]);
 
       p->received_header[idx] = 0;
       return ;

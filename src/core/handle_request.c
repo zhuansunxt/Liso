@@ -7,14 +7,14 @@
 char *WWW_FOLDER;
 
 /* Defineds tokens */
-const char *clrf = "\r\n";
-const char *sp = " ";
-const char *http_version = "HTTP/1.1";
-const char *colon = ":";
+char *clrf = "\r\n";
+char *sp = " ";
+char *http_version = "HTTP/1.1";
+char *colon = ":";
 
 /* Constants string values */
-const char *default_index_file = "index.html";
-const char *server_str = "Liso/1.0";
+char *default_index_file = "index.html";
+char *server_str = "Liso/1.0";
 
 
 /*
@@ -30,28 +30,27 @@ const char *server_str = "Liso/1.0";
  *   - If -1, the caller should handle the error type, clear
  *     client's state and free all associated resources.
  */
-int handle_http_request(int clientfd, char *buf, ssize_t len){
+int handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len){
 #ifdef DEBUG_VERBOSE
-  console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, buf, strlen(buf));
+  console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, client_buffer->buffer, strlen(client_buffer->buffer));
+  console_log("[INFO][HTTP] Header Len: %d", header_len);
 #endif
 
   /* default return value */
   int return_value = 1;
 
-  /* reply buffer */
-  char reply[BUF_SIZE];
-  memset(reply, 0, sizeof(char)*BUF_SIZE);
-
   /* parse header */
   Request *request = NULL;
-  request = parse(buf, len);
+  request = parse(client_buffer->buffer, header_len);
+
+  /* reset client's dynamic buffer */
+  reset_dbuffer(client_buffer);
 
   /* Handle 400 Error: Bad request */
   if (request == NULL) {
     /* if parsing fails, send back 400 error */
-    send_response(reply, (char*)"400", (char*)"Bad Request");
-    send_msg(reply, clrf);
-    reply_to_client(clientfd, reply);
+    send_response(client_buffer, (char*)"400", (char*)"Bad Request");
+    send_msg(client_buffer, clrf);
     return 0;   //connection should be closed when encountering bad request.
   }
 
@@ -86,36 +85,34 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
   correct_version = check_http_version(request);
   if (correct_version < 0) {
     /* if checking version fails, send back 505 error */
-    send_response(reply, (char*)"505", (char*)"HTTP Version not supported");
-    send_header(reply, "Connection", "close");
-    send_msg(reply, clrf);
-    reply_to_client(clientfd, reply);
+    send_response(client_buffer, (char*)"505", (char*)"HTTP Version not supported");
+    send_header(client_buffer, "Connection", "close");
+    send_msg(client_buffer, clrf);
     free_request(request);
     return 0;
   }
 
-  const char *method = request->http_method;
+  char *method = request->http_method;
 
   if (!strcmp(method, "HEAD"))
   {
-    do_head(clientfd, request, reply, last_conn);
+    do_head(clientfd, request, client_buffer, last_conn);
     free_request(request);
   }
   else if (!strcmp(method, "GET"))
   {
-    do_get(clientfd, request, reply, last_conn);
+    do_get(clientfd, request, client_buffer, last_conn);
     free_request(request);
   }
   else if (!strcmp(method, "POST"))
   {
-    do_post(clientfd, request, reply, last_conn);
+    do_post(clientfd, request, client_buffer, last_conn);
     free_request(request);
   }
   else
   {
-    send_response(reply, (char*)"501", (char*)"Not Implemented");
-    send_msg(reply, clrf);
-    reply_to_client(clientfd, reply);
+    send_response(client_buffer, (char*)"501", (char*)"Not Implemented");
+    send_msg(client_buffer, clrf);
     free_request(request);
   }
 
@@ -125,12 +122,12 @@ int handle_http_request(int clientfd, char *buf, ssize_t len){
 /*
  * Reply to client
  */
-void reply_to_client(int client, char *reply) {
-#ifdef DEBUG_VERBOSE
-  console_log("[INFO][REPLIER] Reply to %d\n%s", client, reply);
-#endif
-  Sendn(client, reply, strlen(reply));
-}
+//void reply_to_client(int client, char *reply) {
+//#ifdef DEBUG_VERBOSE
+//  console_log("[INFO][REPLIER] Reply to %d\n%s", client, reply);
+//#endif
+//  Sendn(client, reply, strlen(reply));
+//}
 
 /*
  * Check http version in header
@@ -150,32 +147,40 @@ int check_http_version(Request *req){
   return 0;
 }
 
-int send_msg(char *reply, const char* msg) {
-  strcat(reply, msg);
+int send_msg(dynamic_buffer *dbuf, char* msg) {
+  append_content_dbuffer(dbuf, msg, strlen(msg));
   return 0;
 }
 
-int send_response(char *reply, const char *code, const char*reason) {
-  sprintf(reply, "%s%s%s%s%s%s", http_version, sp, code, sp, reason, clrf);
+int send_response(dynamic_buffer *dbuf, char *code, char*reason) {
+  append_content_dbuffer(dbuf, http_version, strlen(http_version));
+  append_content_dbuffer(dbuf, sp, strlen(sp));
+  append_content_dbuffer(dbuf, code, strlen(code));
+  append_content_dbuffer(dbuf, sp, strlen(sp));
+  append_content_dbuffer(dbuf, reason, strlen(reason));
+  append_content_dbuffer(dbuf, clrf, strlen(clrf));
   return 0;
 }
 
-int send_header(char *reply, const char *hname, const char *hvalue) {
-  char header[512];
-  sprintf(header, "%s%s%s%s%s", hname, colon, sp, hvalue, clrf);
-  strcat(reply, header);
+int send_header(dynamic_buffer *dbuf, char *hname, char *hvalue) {
+  append_content_dbuffer(dbuf, hname, strlen(hname));
+  append_content_dbuffer(dbuf, colon, strlen(colon));
+  append_content_dbuffer(dbuf, sp, strlen(sp));
+  append_content_dbuffer(dbuf, hvalue, strlen(hvalue));
+  append_content_dbuffer(dbuf, clrf, strlen(clrf));
   return 0;
 }
 
-int send_msgbody(int client, char *fullpath) {
-  return write_file_to_socket(client, fullpath);
+int send_msgbody(dynamic_buffer *dbuf, char *body, size_t body_len) {
+  append_content_dbuffer(dbuf, body, body_len);
+  return 0;
 }
 
 /*
  * Handle HEAD request.
  * Return status code.
  */
-int do_head(int client, Request * request, char* reply, int last_conn) {
+int do_head(int client, Request * request, dynamic_buffer *client_buffer, int last_conn) {
   char fullpath[4096];
   char extension[64];
   char mime_type[64];
@@ -196,9 +201,8 @@ int do_head(int client, Request * request, char* reply, int last_conn) {
 #ifdef  DEBUG_VERBOSE
     console_log("File %s can not be accessed", fullpath);
 #endif
-    send_response(reply, "404", "Not Found");
-    send_msg(reply, clrf);
-    reply_to_client(client, reply);
+    send_response(client_buffer, "404", "Not Found");
+    send_msg(client_buffer, clrf);
     return 0;
   }
 
@@ -217,23 +221,22 @@ int do_head(int client, Request * request, char* reply, int last_conn) {
   /* Get last modified time */
   get_flmodified(fullpath, last_modified, 256);
 
-  send_response(reply, "200", "OK");
-  //send_header(reply, "Connection", "close");
-  send_header(reply, "Server", server_str);
-  send_header(reply, "Date", curr_time);
-  send_header(reply, "Content-Length", content_len_str);
-  send_header(reply, "Content-Type", mime_type);
-  send_header(reply, "Last-modified", last_modified);
+  send_response(client_buffer, "200", "OK");
+  //send_header(client_buffer, "Connection", "close");
+  send_header(client_buffer, "Server", server_str);
+  send_header(client_buffer, "Date", curr_time);
+  send_header(client_buffer, "Content-Length", content_len_str);
+  send_header(client_buffer, "Content-Type", mime_type);
+  send_header(client_buffer, "Last-modified", last_modified);
   if (last_conn)
-    send_header(reply, "connection", "close");
+    send_header(client_buffer, "connection", "close");
   else
-    send_header(reply, "connection", "keep-alive");
-  send_msg(reply, clrf);
-  reply_to_client(client, reply);
+    send_header(client_buffer, "connection", "keep-alive");
+  send_msg(client_buffer, clrf);
   return 200;
 }
 
-int do_get(int client, Request *request, char* reply, int last_conn) {
+int do_get(int client, Request *request, dynamic_buffer *client_buffer, int last_conn) {
   char fullpath[4096];
   char extension[64];
   char mime_type[64];
@@ -251,8 +254,7 @@ int do_get(int client, Request *request, char* reply, int last_conn) {
   if (access(fullpath, F_OK) < 0) {
 #ifdef DEBUG_VERBOSE
     console_log("Path %s can not be accessed", fullpath);
-    send_response(reply, "404", "Not Found");
-    reply_to_client(client, reply);
+    send_response(client_buffer, "404", "Not Found");
 #endif
     return 0;
   }
@@ -272,50 +274,51 @@ int do_get(int client, Request *request, char* reply, int last_conn) {
   /* Get last modified time */
   get_flmodified(fullpath, last_modified, 256);
 
-  send_response(reply, "200", "OK");
-  //send_header(reply, "Connection", "close");
-  send_header(reply, "Server", server_str);
-  send_header(reply, "Date", curr_time);
-  send_header(reply, "Content-Length", content_len_str);
-  send_header(reply, "Content-Type", mime_type);
-  send_header(reply, "Last-modified", last_modified);
+  send_response(client_buffer, "200", "OK");
+  //send_header(client_buffer, "Connection", "close");
+  send_header(client_buffer, "Server", server_str);
+  send_header(client_buffer, "Date", curr_time);
+  send_header(client_buffer, "Content-Length", content_len_str);
+  send_header(client_buffer, "Content-Type", mime_type);
+  send_header(client_buffer, "Last-modified", last_modified);
   if (last_conn)
-    send_header(reply, "Connection", "close");
+    send_header(client_buffer, "Connection", "close");
   else
-    send_header(reply, "Connection", "keep-alive");
-  send_msg(reply, clrf);
-  reply_to_client(client, reply);
-  if (send_msgbody(client, fullpath) < 0) {
+    send_header(client_buffer, "Connection", "keep-alive");
+  send_msg(client_buffer, clrf);
+
+  size_t body_len;
+  char * body = get_static_content(fullpath, &body_len);
+  if (send_msgbody(client_buffer, body, body_len) < 0) {
     dump_log("[INFO][HTTP] Sending messages body to client %d failed", client);
 #ifdef DEBUG_VERBOSE
     console_log("[INFO][HTTP][GET] Message body sending fails for client %d", client);
 #endif
   }
+  free_static_content(body, body_len);
   return 0;
 }
 
-int do_post(int client, Request *request, char* reply, int last_conn) {
+int do_post(int client, Request *request, dynamic_buffer *client_buffer, int last_conn) {
   char content_length[32];
   memset(content_length, 0, sizeof(content_length));
   get_header_value(request, "Content-Length", content_length);
   if (strlen(content_length) == 0) {
     /* header value not found */
-    send_response(reply, "401", "Length Required");
-    send_msg(reply, clrf);
-    reply_to_client(client, reply);
+    send_response(client_buffer, "401", "Length Required");
+    send_msg(client_buffer, clrf);
     return 0;
   }
 
-  send_response(reply, "200", "OK");
-  send_msg(reply, clrf);
-  reply_to_client(client, reply);
+  send_response(client_buffer, "200", "OK");
+  send_msg(client_buffer, clrf);
   return 0;
 }
 
 /*
  * Get accordingly MIME type given file extension name
  */
-void get_mime_type(const char *mime, char *type) {
+void get_mime_type(char *mime, char *type) {
   if (!strcmp(mime, "html")) {
     strcpy(type, "text/html");
   } else if (!strcmp(mime, "css")) {
@@ -335,7 +338,7 @@ void get_mime_type(const char *mime, char *type) {
  * Get value given header name.
  * If header name not found, hvalue param will not be set.
  */
-void get_header_value(Request *request, const char * hname, char *hvalue) {
+void get_header_value(Request *request, char * hname, char *hvalue) {
   int i;
 
   for (i = 0; i < request->header_count; i++) {

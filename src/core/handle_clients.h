@@ -17,7 +17,7 @@ typedef struct {
   int maxi;                   /* maximum index of available slot */
   int client_fd[FD_SETSIZE];  /* client slots */
 
-  /* Recv state */
+  /* State */
   dynamic_buffer * client_buffer[FD_SETSIZE];
   size_t received_header[FD_SETSIZE];  /* store header ending's offset */
 } client_pool;

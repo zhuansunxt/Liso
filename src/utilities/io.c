@@ -181,71 +181,53 @@ void get_flmodified(const char*path, char *last_mod_time, size_t buf_size) {
   strftime(last_mod_time, buf_size, "%a, %d %b %Y %H:%M:%S %Z", curr_gmt_time);
 }
 
-/*
- * Write whole file content to given socket descriptor given the file path.
- * Return 0 on success, return -1 on sys error.
- */
-int write_file_to_socket(int clientfd, char *path) {
+char *get_static_content(char *path, size_t *content_len){
   char *file_to_send;
   size_t file_len;
 
   int fd = open(path, O_RDONLY, (mode_t)0600);
   if (fd == -1) {
     dump_log("[IO][ERROR] Error when opening file %s for reading", path);
-    return -1;
+    return NULL;
   }
 
   struct stat file_st = {0};
   if ((fstat(fd, &file_st)) == -1) {
     dump_log("[IO][ERROR] Error when getting status of file %s for reading", path);
     close(fd);
-    return -1;
+    return NULL;
   }
 
   file_len = file_st.st_size;
   if (file_len <= 0) {
     dump_log("[IO][ERROR] File %s is empty. Noting to read from", path);
     close(fd);
-    return -1;
+    return NULL;
   }
 
   file_to_send = mmap(0, file_len, PROT_READ, MAP_PRIVATE, fd, 0);
   if (file_to_send == MAP_FAILED) {
     close(fd);
     dump_log("[IO][ERROR] File %s mapping to RAM fails: %s", path, strerror(errno));
-    return -1;
+    return NULL;
   }
 
-  fd_set writefd;
-  FD_ZERO(&writefd);
-  FD_SET(clientfd, &writefd);
-  size_t send_granularity = BUF_SIZE;
-  size_t sent_lenth = 0;
-  while (sent_lenth < file_len) {
-    select(clientfd+1, NULL, &writefd, NULL, NULL);
-    if (FD_ISSET(clientfd, &writefd)) {
-      size_t len = MIN(send_granularity, file_len-sent_lenth);
-      Sendn(clientfd, file_to_send, len);
-      sent_lenth += len;
-      file_to_send += len;
-    }
-    FD_ZERO(&writefd);
-    FD_SET(clientfd, &writefd);
-  }
-
-  if (munmap(file_to_send, file_len) == -1) {
-    close(fd);
-    dump_log("[IO][ERROR] File %d can not be unmapped", path);
-    return -1;
-  }
   close(fd);
-  return 0;
+  *content_len = file_len;
+  return file_to_send;
+}
+
+void free_static_content(char * file_buffer, size_t file_len) {
+  if (munmap(file_buffer, file_len) == -1) {
+    dump_log("[IO][ERROR] Fails to clean static content buffer");
+  }
 }
 
 void init_dbuffer(dynamic_buffer *dbuf) {
   dbuf->buffer = (char*)malloc(sizeof(char) * BUF_SIZE);
   dbuf->offset = 0;
   dbuf->capacity = BUF_SIZE;
+  dbuf->send_offset = 0;
   memset(dbuf->buffer, 0, BUF_SIZE);
 }
 
@@ -263,10 +245,12 @@ void append_content_dbuffer(dynamic_buffer *dbuf, char *buf, ssize_t len) {
 void reset_dbuffer(dynamic_buffer *dbuf) {
   memset(dbuf->buffer, 0, dbuf->capacity);
   dbuf->offset = 0;
+  dbuf->send_offset = 0;
 }
 
 void free_dbuffer(dynamic_buffer *dbuf) {
   free(dbuf->buffer);
+  free(dbuf);
 }
 //0/* Another version */
 //int write_file_to_socket(int clientfd, char *path) {

@@ -10,23 +10,23 @@
 #include "../utilities/commons.h"
 #include "../utilities/io.h"
 
-int handle_http_request(int, char*, ssize_t);
+int handle_http_request(int, dynamic_buffer *, size_t);
 void reply_to_client(int, char*);
 int check_http_version(Request *);
 //int send_error(char*, char*, char*);
 
 /* Response APIs */
-int send_response(char*, const char*, const char*);
-int send_header(char*, const char*, const char*);
-int send_msg(char*, const char*);
+int send_response(dynamic_buffer*, char*, char*);
+int send_header(dynamic_buffer*, char*, char*);
+int send_msg(dynamic_buffer*, char*);
 int sen_msgbody(int, char *);
 
-void get_mime_type(const char*, char*);
-void get_header_value(Request*, const char*, char*);
+void get_mime_type(char*, char*);
+void get_header_value(Request*, char*, char*);
 
 void free_request(Request *);
 
-int do_head(int client, Request *, char *, int);
-int do_get(int client, Request *, char *, int);
-int do_post(int client, Request *, char *, int);
+int do_head(int client, Request *, dynamic_buffer *, int);
+int do_get(int client, Request *, dynamic_buffer *, int);
+int do_post(int client, Request *, dynamic_buffer *, int);
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H

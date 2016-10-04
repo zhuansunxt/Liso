@@ -37,6 +37,8 @@ void get_curr_time(char *, size_t);
 size_t get_file_len(const char*);
 void get_flmodified(const char*, char *, size_t);
 int write_file_to_socket(int, char *);
+char *get_static_content(char *, size_t *);
+void free_static_content(char *, size_t);
 /*--------------- End File System APIs -----------*/
 
 
@@ -44,6 +46,7 @@ typedef struct dynamic_buffer{
   char *buffer;
   size_t offset;
   size_t capacity;
+  size_t send_offset;
 } dynamic_buffer;
 
 void init_dbuffer(dynamic_buffer *);
