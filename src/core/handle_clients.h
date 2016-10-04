@@ -18,10 +18,8 @@ typedef struct {
   int client_fd[FD_SETSIZE];  /* client slots */
 
   /* Recv state */
-  char *client_buffer[FD_SETSIZE];  /* buffer contains client's request content */
-  size_t buffer_offset[FD_SETSIZE]; /* current position of client's buffer */
-  size_t buffer_cap[FD_SETSIZE];    /* current allocated size of client's buffer */
-  char received_header[FD_SETSIZE];  /* if this client's http header not fully received yet */
+  dynamic_buffer * client_buffer[FD_SETSIZE];
+  size_t received_header[FD_SETSIZE];  /* store header ending's offset */
 } client_pool;
 
 extern client_pool pool;
@@ -38,6 +36,8 @@ void print_pool();
 
 char* append_request(int, char *, ssize_t);
 size_t get_client_buffer_offset(int);
-void set_header_received(int);
+void set_header_received(int, size_t);
+
+size_t handle_recv_header(int, char *);
 
 #endif //LISO_SERVER_H

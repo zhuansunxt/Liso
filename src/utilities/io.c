@@ -242,6 +242,32 @@ int write_file_to_socket(int clientfd, char *path) {
   return 0;
 }
 
+void init_dbuffer(dynamic_buffer *dbuf) {
+  dbuf->buffer = (char*)malloc(sizeof(char) * BUF_SIZE);
+  dbuf->offset = 0;
+  dbuf->capacity = BUF_SIZE;
+  memset(dbuf->buffer, 0, BUF_SIZE);
+}
+
+void append_content_dbuffer(dynamic_buffer *dbuf, char *buf, ssize_t len) {
+  if ((dbuf->offset+len) > dbuf->capacity) {
+    int expansion_size = dbuf->capacity;
+    while ((dbuf->offset+len) > expansion_size) expansion_size *= 2;
+    dbuf->buffer = (char *) realloc(dbuf->buffer, expansion_size);
+    dbuf->capacity = expansion_size;
+  }
+  memcpy(dbuf->buffer+dbuf->offset, buf, len);
+  dbuf->offset += len;
+}
+
+void reset_dbuffer(dynamic_buffer *dbuf) {
+  memset(dbuf->buffer, 0, dbuf->capacity);
+  dbuf->offset = 0;
+}
+
+void free_dbuffer(dynamic_buffer *dbuf) {
+  free(dbuf->buffer);
+}
 //0/* Another version */
 //int write_file_to_socket(int clientfd, char *path) {
 //  char buf[BUF_SIZE];

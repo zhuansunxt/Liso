@@ -2,7 +2,7 @@
 *.o
 *.tab.c
 *.tab.h
-log
+*log
 exp/
 www/
 *.swp

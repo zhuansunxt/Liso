@@ -39,4 +39,16 @@ void get_flmodified(const char*, char *, size_t);
 int write_file_to_socket(int, char *);
 /*--------------- End File System APIs -----------*/
 
+
+typedef struct dynamic_buffer{
+  char *buffer;
+  size_t offset;
+  size_t capacity;
+} dynamic_buffer;
+
+void init_dbuffer(dynamic_buffer *);
+void append_content_dbuffer(dynamic_buffer *, char *buf, ssize_t len);
+void reset_dbuffer(dynamic_buffer *);
+void free_dbuffer(dynamic_buffer *);
+
 #endif //LISO_IO_H
