@@ -233,6 +233,9 @@ int do_head(int client, Request * request, dynamic_buffer *client_buffer, int la
   else
     send_header(client_buffer, "connection", "keep-alive");
   send_msg(client_buffer, clrf);
+#ifdef DEBUG_VERBOSE
+  console_log("[DO_HEAD] Response to send: %s", client_buffer->buffer);
+#endif
   return 200;
 }
 

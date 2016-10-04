@@ -121,6 +121,7 @@ void handle_clients() {
       size_t send_len = MIN(send_granularity, client_buffer->offset-client_buffer->send_offset);
       Sendn(clientfd, client_buffer->buffer, send_len);
       client_buffer->send_offset += send_len;
+      p->nready--;
     } else {
       /* Can not handle this type of event */
       dump_log("[handle_client handle_client()] Can not deal with this type of event");

@@ -33,8 +33,8 @@ class tester(unittest2.TestCase):
         return
 
     def test_make(self):
-        if self.testsuite.scores['test_git'] <= 0:
-            self.skipTest("Not a git repo, skip rest of the test.")
+        # if self.testsuite.scores['test_git'] <= 0:
+        #     self.skipTest("Not a git repo, skip rest of the test.")
         check_both('make clean', False, False)
         check_output('make')
         self.testsuite.scores['test_make'] = 1
@@ -47,7 +47,7 @@ class grader(object):
         self.scores = {}
 
     def prepareTestSuite(self):
-        self.suite.addTest(tester('test_git', self))
+        #self.suite.addTest(tester('test_git', self))
         self.suite.addTest(tester('test_make', self))
         self.scores['test_git'] = 0
         self.scores['test_make'] = 0
