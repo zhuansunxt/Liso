@@ -11,7 +11,14 @@
 
 extern char *LOGFILE;
 extern FILE *log_file;
+extern char *LOCKFILE;
 extern char *WWW_FOLDER;
+extern char *CGI_scripts;
+extern char *PRIVATE_KEY_FILE;
+extern char *CERT_FILE;
+
 extern int listenfd;
+
+void daemonize();
 
 #endif //LISO_H

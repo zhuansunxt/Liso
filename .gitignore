@@ -3,6 +3,7 @@
 *.tab.c
 *.tab.h
 *log
+*.lock
 exp/
 www/
 *.swp
