@@ -20,6 +20,7 @@ void init_pool(int listenfd) {
     p->client_fd[i] = -1;     /* - 1 indicates avaialble entry */
     p->client_buffer[i] = NULL;
     p->received_header[i] = 0;
+    p->should_be_close[i] = 0;
   }
 }
 
@@ -39,6 +40,7 @@ void add_client_to_pool(int newfd) {
       p->client_buffer[i] = (dynamic_buffer*)malloc(sizeof(dynamic_buffer));
       init_dbuffer(p->client_buffer[i]);
 
+      p->state[i] = READY_FOR_READ;
       FD_SET(newfd, &p->master);
       p->maxfd = (newfd > p->maxfd) ? newfd : p->maxfd;
       p->maxi = (i > p->maxi) ? i : p->maxi;
@@ -58,15 +60,15 @@ void handle_clients() {
   int i, clientfd;
   char buf[BUF_SIZE];
 
-  for (i = 0; (i <= p->maxi) && (p->nready > 0); i++) {
+  for (i = 0; (i <= p->maxi) ; i++) {
     clientfd = p->client_fd[i];
     if (clientfd <= 0) continue;
 
     memset(buf, 0, sizeof(char)*BUF_SIZE);
 
     /* If client is ready, read request from it and echo it back */
-    if (FD_ISSET(clientfd, &p->read_fds)) {
-      set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
+    if (FD_ISSET(clientfd, &p->read_fds) && p->state[i] == READY_FOR_READ) {
+      //set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
       nbytes = recv(clientfd, buf, BUF_SIZE, 0);
 
       if (nbytes > 0) {
@@ -92,12 +94,14 @@ void handle_clients() {
         console_log("[INFO] Client %d request result %d", clientfd, http_res);
 
         if (http_res == 1) {          /* Connection should be keeped alive */
-          reset_client_buffer_state(clientfd);
+          p->should_be_close[i] = 0;
         } else if (http_res == 0) {   /* Connection should be closed */
-          clear_client_by_idx(clientfd, i);
+          p->should_be_close[i] = 1;
         } else if (http_res == -1) {  /* Internal error in http handler */
+          /* TODO: send error response */
           clear_client_by_idx(clientfd, i);
         }
+        p->state[i] = READY_FOR_WRITE;
         //clr_fl(clientfd, O_NONBLOCK);   /* clear nonblocking */
       } else if (nbytes <= 0) {
         if (nbytes == 0) {    /* Connection closed by client */
@@ -113,19 +117,26 @@ void handle_clients() {
        * place nready is substracted: after each loop iteration, current client
        * should be removed from master set and be selected again. */
       p->nready--;
-    } else if (FD_ISSET(clientfd, &p->write_fds)){
+    }
+
+    if (FD_ISSET(clientfd, &p->write_fds) && p->state[i] == READY_FOR_WRITE) {
       /* Handle clients that are ready to be response to */
-      set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
+      //set_fl(clientfd, O_NONBLOCK);     /* set nonblocking */
       dynamic_buffer *client_buffer = p->client_buffer[i];
       size_t send_granularity = 8192;
-      size_t send_len = MIN(send_granularity, client_buffer->offset-client_buffer->send_offset);
-      Sendn(clientfd, client_buffer->buffer, send_len);
+      size_t send_len = MIN(send_granularity, client_buffer->offset - client_buffer->send_offset);
+      Sendn(clientfd, client_buffer->buffer + client_buffer->send_offset, send_len);
       client_buffer->send_offset += send_len;
-      p->nready--;
-    } else {
-      /* Can not handle this type of event */
-      dump_log("[handle_client handle_client()] Can not deal with this type of event");
-      clear_client(clientfd);
+
+#ifdef DEBUG_VERBOSE
+      console_log("[Client Pool] Successfully sent %d bytes to client %d", send_len, clientfd);
+#endif
+
+      if (client_buffer->send_offset >= client_buffer->offset) {
+        if (p->should_be_close[i] == 1) clear_client_by_idx(clientfd, i);
+        reset_client_buffer_state_by_idx(clientfd, i);
+      }
+      //sdp->nready--;    // minus?
     }
 
   } // End for loop.
@@ -138,7 +149,8 @@ void clear_client_by_idx(int client_fd, int idx){
   close(client_fd);
   FD_CLR(client_fd, &p->master);
   p->client_fd[idx] = -1;
-
+  p->should_be_close[idx] = 0;
+  p->state[idx] = READY_FOR_READ;
   /* free client buffer */
   free_dbuffer(p->client_buffer[idx]);
   p->received_header[idx] = 0;
@@ -157,7 +169,8 @@ void clear_client(int client) {
       close(cliendfd);
       FD_CLR(cliendfd, &p->master);
       p->client_fd[idx] = -1;
-
+      p->should_be_close[idx] = 0;
+      p->state[idx] = READY_FOR_READ;
       /* free client buffer */
       free_dbuffer(p->client_buffer[idx]);
 
@@ -259,7 +272,7 @@ void print_pool() {
 size_t get_client_buffer_offset(int client) {
   int i;
   int clientfd;
-  for (i = 0; (i <= p->maxi) && p->nready > 0; i++) {
+  for (i = 0; (i <= p->maxi); i++) {
     clientfd = p->client_fd[i];
     if (clientfd == client) return p->client_buffer[i]->offset;
   }
@@ -295,21 +308,12 @@ void set_header_received(int client, size_t offset) {
  * Used for pipelined request. If connection should be kept alive, upon finish
  * the response, reset client's state to wait for next HTTP request.
  */
-void reset_client_buffer_state(int client) {
-  int i, clientfd;
-
-  for (i = 0; i < FD_SETSIZE; i++) {
-    clientfd = p->client_fd[i];
-    if (clientfd == client) {
-      reset_dbuffer(p->client_buffer[i]);
-      p->received_header[i] = 0;
-      return ;
-    }
-  }
-#ifdef DEBUG_VERBOSE
-  console_log("[INFO] Client not found when resetting client buffer state");
-#endif
-  dump_log("[INFO] Client not found when resetting client buffer state");
+void reset_client_buffer_state_by_idx(int client, int idx) {
+  reset_dbuffer(p->client_buffer[idx]);
+  p->received_header[idx] = 0;
+  p->state[idx] = READY_FOR_READ;
+  p->should_be_close[idx] = 0;
+  return ;
 }
 
 /*

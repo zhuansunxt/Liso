@@ -72,6 +72,7 @@ ssize_t sendn(int fd, const void *vptr, ssize_t n) {
       if (nwritten < 0 && errno == EINTR) {
         nwritten = 0;   /* ignore the interrupt */
       } else {
+        console_log("send n error: %s", strerror(errno));
         return -1;    /* error */
       }
     }
@@ -88,8 +89,11 @@ ssize_t sendn(int fd, const void *vptr, ssize_t n) {
  * Will termiate when error in system call.
  */
 void Sendn(int fd, const void *ptr, int n) {
-  if (sendn(fd, ptr, n) != n)
+  ssize_t ret;
+  if ((ret = sendn(fd, ptr, n)) != n) {
+    console_log("sendn returns %d != n %d", ret, n);
     err_sys("sendn error");
+  }
 }
 
 /*

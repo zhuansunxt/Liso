@@ -8,6 +8,11 @@
 #include "../utilities/io.h"
 #include "handle_request.h"
 
+typedef enum client_state {
+    READY_FOR_READ,
+    READY_FOR_WRITE,
+} client_state;
+
 typedef struct {
   fd_set master;              /* all descritors */
   fd_set read_fds;            /* all ready-to-read descriptors */
@@ -20,6 +25,8 @@ typedef struct {
   /* State */
   dynamic_buffer * client_buffer[FD_SETSIZE];
   size_t received_header[FD_SETSIZE];  /* store header ending's offset */
+  client_state state[FD_SETSIZE];
+  char should_be_close[FD_SETSIZE];
 } client_pool;
 
 extern client_pool pool;
@@ -31,7 +38,7 @@ void handle_clients();
 void clear_client_by_idx(int, int);
 void clear_client(int);
 void clear_pool();
-void reset_client_buffer_state(int);
+void reset_client_buffer_state_by_idx(int, int);
 void print_pool();
 
 char* append_request(int, char *, ssize_t);
