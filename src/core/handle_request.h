@@ -10,7 +10,14 @@
 #include "../utilities/commons.h"
 #include "../utilities/io.h"
 
-int handle_http_request(int, dynamic_buffer *, size_t);
+typedef enum http_process_result{
+  ERROR,
+  CLOSE,
+  PERSIST,
+  NOT_ENOUGH_DATA
+}http_process_result;
+
+http_process_result handle_http_request(int, dynamic_buffer *, size_t);
 void reply_to_client(int, char*);
 int check_http_version(Request *);
 //int send_error(char*, char*, char*);
@@ -28,5 +35,12 @@ void free_request(Request *);
 
 int do_head(int client, Request *, dynamic_buffer *, int);
 int do_get(int client, Request *, dynamic_buffer *, int);
-int do_post(int client, Request *, dynamic_buffer *, int);
+int do_post(int client, Request *, dynamic_buffer *, int, char*, size_t);
+
+void reply_400(dynamic_buffer *);   // Bad request
+void reply_404(dynamic_buffer *);   // Not found
+void reply_411(dynamic_buffer *);   // Length required
+void reply_500(dynamic_buffer *);   // Internal error
+void reply_501(dynamic_buffer *);   // Not implemented
+void reply_505(dynamic_buffer *);   // Version unsupported
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H

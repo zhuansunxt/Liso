@@ -30,45 +30,40 @@ char *server_str = "Liso/1.0";
  *   - If -1, the caller should handle the error type, clear
  *     client's state and free all associated resources.
  */
-int handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len){
+http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len){
 #ifdef DEBUG_VERBOSE
   console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, client_buffer->buffer, strlen(client_buffer->buffer));
   console_log("[INFO][HTTP] Header Len: %d", header_len);
 #endif
 
   /* default return value */
-  int return_value = 1;
+  http_process_result return_value = PERSIST;
 
   /* parse header */
   Request *request = NULL;
   request = parse(client_buffer->buffer, header_len);
 
-  /* reset client's dynamic buffer */
-  reset_dbuffer(client_buffer);
-
   /* Handle 400 Error: Bad request */
   if (request == NULL) {
-    /* if parsing fails, send back 400 error */
-    send_response(client_buffer, (char*)"400", (char*)"Bad Request");
-    send_msg(client_buffer, clrf);
-    return 0;   //connection should be closed when encountering bad request.
+    console_log("Return 400 Bad request!!!");
+    reply_400(client_buffer);
+    return CLOSE;   //connection should be closed when encountering bad request.
   }
 
 #ifdef DEBUG_VERBOSE
-  console_log("[INFO][PARSER] -------Parsed HTTP Request--------");
+  console_log("[INFO][PARSER] -------Parsed HTTP Request Begin--------");
   console_log("[Http Method] %s\n",request->http_method);
   console_log("[Http Version] %s\n",request->http_version);
   console_log("[Http Uri] %s\n",request->http_uri);
   int index;
   for(index = 0;index < request->header_count;index++){
-    console_log("[Request Header]\n");
     console_log("[Header name] %s : [Header Value] %s\n",request->headers[index].header_name,request->headers[index].header_value);
   }
-  console_log("[INFO][PARSER] -------Parsed HTTP Request--------");
+  console_log("[INFO][PARSER] -------Parsed HTTP Request End--------");
 #endif
 
   /* Check Connection header. If 'connection: close' is
-   * found, then shoud set return value to be 0, otherwise
+   * found, then should set return value to be 0, otherwise
    * set return value to be 1
    */
   char connection_header_val[32];
@@ -76,7 +71,7 @@ int handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t head
   memset(connection_header_val, 0, sizeof(connection_header_val));
   get_header_value(request, "Connection", connection_header_val);
   if (!strcmp(connection_header_val, "close")) {
-    return_value = 0;
+    return_value = CLOSE;
     last_conn = 1;
   }
 
@@ -84,50 +79,54 @@ int handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t head
   int correct_version;
   correct_version = check_http_version(request);
   if (correct_version < 0) {
-    /* if checking version fails, send back 505 error */
-    send_response(client_buffer, (char*)"505", (char*)"HTTP Version not supported");
-    send_header(client_buffer, "Connection", "close");
-    send_msg(client_buffer, clrf);
+    reply_505(client_buffer);
     free_request(request);
-    return 0;
+    return CLOSE;
   }
 
   char *method = request->http_method;
 
   if (!strcmp(method, "HEAD"))
   {
+    reset_dbuffer(client_buffer);
     do_head(clientfd, request, client_buffer, last_conn);
     free_request(request);
   }
   else if (!strcmp(method, "GET"))
   {
+    reset_dbuffer(client_buffer);
     do_get(clientfd, request, client_buffer, last_conn);
     free_request(request);
   }
   else if (!strcmp(method, "POST"))
   {
-    do_post(clientfd, request, client_buffer, last_conn);
+    /* Check Conteng-Length header field */
+    char content_length_str[32];
+    memset(content_length_str, 0, sizeof(content_length_str));
+    get_header_value(request, "Content-Length", content_length_str);
+    if (strlen(content_length_str) == 0) {
+      reply_411(client_buffer);
+      free_request(request);
+      return CLOSE;         // close current connection for 411 error.
+    }
+
+    size_t content_len = atoi(content_length_str);
+    console_log("Content-len : %d + Header-len: %d : Buffer-len: %d", content_len, header_len, client_buffer->offset);
+    if ((content_len+header_len) > client_buffer->offset)
+      return NOT_ENOUGH_DATA;         // post method message body not fully received yet.
+
+    do_post(clientfd, request, client_buffer, last_conn,
+              client_buffer->buffer+header_len, content_len);
     free_request(request);
   }
   else
   {
-    send_response(client_buffer, (char*)"501", (char*)"Not Implemented");
-    send_msg(client_buffer, clrf);
+    reply_501(client_buffer);
     free_request(request);
   }
 
   return return_value;
 }
-
-/*
- * Reply to client
- */
-//void reply_to_client(int client, char *reply) {
-//#ifdef DEBUG_VERBOSE
-//  console_log("[INFO][REPLIER] Reply to %d\n%s", client, reply);
-//#endif
-//  Sendn(client, reply, strlen(reply));
-//}
 
 /*
  * Check http version in header
@@ -201,8 +200,7 @@ int do_head(int client, Request * request, dynamic_buffer *client_buffer, int la
 #ifdef  DEBUG_VERBOSE
     console_log("File %s can not be accessed", fullpath);
 #endif
-    send_response(client_buffer, "404", "Not Found");
-    send_msg(client_buffer, clrf);
+   reply_404(client_buffer);
     return 0;
   }
 
@@ -257,8 +255,8 @@ int do_get(int client, Request *request, dynamic_buffer *client_buffer, int last
   if (access(fullpath, F_OK) < 0) {
 #ifdef DEBUG_VERBOSE
     console_log("Path %s can not be accessed", fullpath);
-    send_response(client_buffer, "404", "Not Found");
 #endif
+    reply_404(client_buffer);
     return 0;
   }
 
@@ -302,16 +300,12 @@ int do_get(int client, Request *request, dynamic_buffer *client_buffer, int last
   return 0;
 }
 
-int do_post(int client, Request *request, dynamic_buffer *client_buffer, int last_conn) {
-  char content_length[32];
-  memset(content_length, 0, sizeof(content_length));
-  get_header_value(request, "Content-Length", content_length);
-  if (strlen(content_length) == 0) {
-    /* header value not found */
-    send_response(client_buffer, "401", "Length Required");
-    send_msg(client_buffer, clrf);
-    return 0;
-  }
+int do_post(int client, Request *request, dynamic_buffer *client_buffer,
+            int last_conn, char *message_body, size_t body_len) {
+#ifdef DEBUG_VERBOSE
+  console_log("[INFO][HTTP][POST] Client %d sent message body %s", client, message_body);
+  console_log("[INFO][HTTP][POST] Message body length: %d", body_len);
+#endif
 
   send_response(client_buffer, "200", "OK");
   send_msg(client_buffer, clrf);
@@ -361,4 +355,42 @@ void get_header_value(Request *request, char * hname, char *hvalue) {
 void free_request(Request *request) {
   free(request->headers);
   free(request);
+}
+
+void reply_400(dynamic_buffer *client_buffer){
+  reset_dbuffer(client_buffer);
+  send_response(client_buffer, (char*)"400", (char*)"Bad Request");
+  send_header(client_buffer, "Connection", "close");
+  send_msg(client_buffer, clrf);
+}
+
+void reply_404(dynamic_buffer *client_buffer){
+  reset_dbuffer(client_buffer);
+  send_response(client_buffer, "404", "Not Found");
+  send_msg(client_buffer, clrf);
+}
+
+void reply_411(dynamic_buffer *client_buffer){
+  reset_dbuffer(client_buffer);
+  send_response(client_buffer, (char*)"411", (char*)"Length Required");
+  send_header(client_buffer, "Connection", "close");
+}
+
+void reply_500(dynamic_buffer *client_buffer){
+  reset_dbuffer(client_buffer);
+  send_response(client_buffer, (char*)"500", (char*)"Internal Server Error");
+  send_header(client_buffer, "Connection", "close");
+}
+
+void reply_501(dynamic_buffer *client_buffer){
+  reset_dbuffer(client_buffer);
+  send_response(client_buffer, (char*)"501", (char*)"Not Implemented");
+  send_msg(client_buffer, clrf);
+}
+
+void reply_505(dynamic_buffer *client_buffer){
+  reset_dbuffer(client_buffer);
+  send_response(client_buffer, (char*)"505", (char*)"HTTP Version not supported");
+  send_header(client_buffer, "Connection", "close");
+  send_msg(client_buffer, clrf);
 }

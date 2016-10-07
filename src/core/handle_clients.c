@@ -106,21 +106,21 @@ void handle_clients() {
 
         set_header_received(clientfd, header_recv_offset);
 
-        int http_res = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset);
-#ifdef DEBUG_VERBOSE
-        console_log("[INFO] Client %d request result %d", clientfd, http_res);
-#endif
-        dump_log("[INFO] Client %d request result %d (1: should be kpet alive. 0: should be closed. -1: internal error)", clientfd, http_res);
-        if (http_res == 1) {          /* Connection should be keeped alive */
-          p->should_be_close[i] = 0;
-        } else if (http_res == 0) {   /* Connection should be closed */
-          p->should_be_close[i] = 1;
-        } else if (http_res == -1) {  /* Internal error in http handler */
-          /* TODO: send error response 500*/
-          clear_client_by_idx(clientfd, i);
-          continue;
+        http_process_result result = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset);
+        switch (result){
+          case ERROR:
+            reply_500(p->client_buffer[i]);
+          case CLOSE:
+            console_log("Client %d http processing result: CLOSE");
+            p->should_be_close[i] = 1;
+          case PERSIST:
+            p->state[i] = READY_FOR_WRITE;
+            break;
+          case NOT_ENOUGH_DATA:
+            continue;                           /* Upon not-enough-data result: keep state same and just move on */
+          default:
+            break;
         }
-        p->state[i] = READY_FOR_WRITE;
       } else if (nbytes <= 0) {
         if (nbytes == 0) {    /* Connection closed by client */
           dump_log("[INFO] Connection closed by client %d", clientfd);
@@ -150,9 +150,8 @@ void handle_clients() {
 #endif
 
       if (client_buffer->send_offset >= client_buffer->offset) {
-        /* If all buffer content are sent. Reset client buffer. */
-        if (p->should_be_close[i] == 1) clear_client_by_idx(clientfd, i);
         reset_client_buffer_state_by_idx(clientfd, i);
+        if (p->should_be_close[i] == 1) clear_client_by_idx(clientfd, i);
       }
       p->nready--;
     }
@@ -270,7 +269,6 @@ void reset_client_buffer_state_by_idx(int client, int idx) {
   reset_dbuffer(p->client_buffer[idx]);
   p->received_header[idx] = 0;
   p->state[idx] = READY_FOR_READ;
-  p->should_be_close[idx] = 0;
   return ;
 }
 
