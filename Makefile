@@ -6,13 +6,14 @@
 # Author: Xiaotong Sun (xiaotons@andrew.cmu.edu)                               #
 #                                                                              #
 ################################################################################
+OPENSSL=/usr/include/openssl/
 
 define build-cmd
 $(CC) $(CFLAGS) -c  $< -o $@
 endef
 
 CC=gcc
-CFLAGS=-Wall  -Werror -O2 -Wno-unused-function
+CFLAGS=-Wall -O2 -Wno-unused-function
 
 OBJ_DIR=objs
 SOURCE_DIR=src
@@ -33,7 +34,7 @@ OBJ+=$(OBJ_DIR)/liso.o
 all: pre lisod
 
 lisod: $(OBJ)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) -lcrypto -lssl $^ -o $@
 
 pre:
 	mkdir -p $(OBJ_DIR)

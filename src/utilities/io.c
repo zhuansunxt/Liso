@@ -42,18 +42,57 @@ int open_listenfd(int port){
   serveraddr.sin_family = AF_INET;
   serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
   serveraddr.sin_port = htons((unsigned short)port);
+
   if (bind(listenfd, (sockaddr *)&serveraddr, sizeof(serveraddr)) < 0) {
     console_log("%s bind listenser socket", SOCKET_API_ERR_MSG);
     close(listenfd);
     return -1;
   }
 
-  if (listen(listenfd, 10) < 0) {
+  if (listen(listenfd, 5) < 0) {
     console_log("%s listen on listener socket", SOCKET_API_ERR_MSG);
     return -1;
   }
 
   return listenfd;
+}
+
+int open_ssl_socket(int port, SSL_CTX* ssl_context) {
+  int   ssl_socket;
+  int yes;
+  sockaddr_in addr;
+
+  if ((ssl_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+    SSL_CTX_free(ssl_context);
+    fprintf(stderr, "Failed creating socket.\n");
+    return -1;
+  }
+
+  /* Eliminates "Address already in use" error from bind */
+  if (setsockopt(ssl_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) < 0) {
+    console_log("%s set SO_REUSEADDR", SOCKET_API_ERR_MSG);
+    return -1;
+  }
+
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_port = htons(port);
+
+  if (bind(ssl_socket, (sockaddr *)&addr, sizeof(addr)) < 0)
+  {
+    close(ssl_socket);
+    SSL_CTX_free(ssl_context);
+    fprintf(stderr, "Failed binding SSL socket.\n");
+    return -1;
+  }
+
+  if (listen(ssl_socket, 5) < 0) {
+    fprintf(stderr, "Failed listening to SSL socket.\n");
+    return -1;
+  }
+
+  return ssl_socket;
 }
 
 /*

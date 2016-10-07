@@ -277,10 +277,10 @@ class project1cp2grader(grader):
         self.port = random.randint(1025, 9999)
         #self.port = 9999
         self.tls_port = random.randint(1025, 9999)
-        self.tmp_dir = "../tmp/"
-        self.priv_key = os.path.join(self.tmp_dir, 'grader.key')
-        self.cert = os.path.join(self.tmp_dir, 'grader.crt')
-        self.www = os.path.join(self.tmp_dir, 'www/')
+        self.tmp_dir = ""
+        self.priv_key = os.path.join(self.tmp_dir, '../xiaotons.key')
+        self.cert = os.path.join(self.tmp_dir, '../xiaotons.crt')
+        self.www = os.path.join(self.tmp_dir, '../www/')
         self.cgi = os.path.join(self.tmp_dir, 'cgi/cgi_script.py')
         print '\nUsing ports: %d,%d' % (self.port, self.tls_port)
 

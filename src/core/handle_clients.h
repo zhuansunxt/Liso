@@ -9,9 +9,15 @@
 #include "handle_request.h"
 
 typedef enum client_state {
+    AWAITNG_COMPLETE_HEADER,
     READY_FOR_READ,
     READY_FOR_WRITE,
 } client_state;
+
+typedef enum client_type {
+    HTTP_CLIENT,
+    HTTPS_CLIENT
+} client_type;
 
 typedef struct {
   fd_set master;              /* all descritors */
@@ -23,17 +29,21 @@ typedef struct {
   int client_fd[FD_SETSIZE];  /* client slots */
 
   /* State */
-  dynamic_buffer * client_buffer[FD_SETSIZE];
-  size_t received_header[FD_SETSIZE];  /* store header ending's offset */
-  client_state state[FD_SETSIZE];
-  char should_be_close[FD_SETSIZE];
+  dynamic_buffer * client_buffer[FD_SETSIZE]; /* client's dynamic-size buffer */
+  size_t received_header[FD_SETSIZE];         /* store header ending's offset */
+  client_state state[FD_SETSIZE];             /* client's state */
+  char should_be_close[FD_SETSIZE];           /* whether client should be closed when checked */
+
+  /* Type */
+  client_type type[FD_SETSIZE];               /* client's type: HTTP or HTTPS */
+  SSL * context[FD_SETSIZE];                  /* set if client's type is HTTPS */
 } client_pool;
 
 extern client_pool pool;
 
 /* -------- Client pool APIs -------- */
-void init_pool(int listenfd);
-void add_client_to_pool(int newfd);
+void init_pool();
+void add_client_to_pool(int newfd, SSL*, client_type);
 void handle_clients();
 void clear_client_by_idx(int, int);
 void clear_client(int);

@@ -8,6 +8,7 @@
 char *LOGFILE;
 FILE *log_file;
 int listenfd;
+int ssl_socket;
 
 /*
  * Write log to console.
@@ -82,6 +83,7 @@ void err_sys(const char *fmt, ...){
 void tear_down() {
   close_log();
   close(listenfd);
+  close(ssl_socket);
 }
 
 void set_fl(int fd, int flags) /* flags are file status flags to turn on */

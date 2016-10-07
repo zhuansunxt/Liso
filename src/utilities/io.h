@@ -9,11 +9,14 @@
 #include <netinet/in.h>
 #include <ctype.h>
 #include <time.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include "commons.h"
 
 #define SOCKET_API_ERR_MSG "[Error in socket_api]"
 #define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
 
 /*--------------- Socket APIs ---------------*/
 typedef struct sockaddr sockaddr;
@@ -23,9 +26,12 @@ typedef struct sockaddr_storage sockaddr_storage;
 typedef struct addrinfo addrinfo;
 
 void *get_in_addr(sockaddr *sa);
-int open_listenfd(int port);
+int open_listenfd(int);
+int open_ssl_socket(int, SSL_CTX *);
 ssize_t sendn(int, const void *, ssize_t);
 void Sendn(int, const void *, int);
+//ssize_t SSL_sendn(int, const void *, ssize_t);
+//void SSL_Sendn(int, const void *, sszie_t);
 /*--------------- End Socket APIs ------------*/
 
 /*--------------- File System APIs ---------------*/
