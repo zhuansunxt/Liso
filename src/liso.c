@@ -3,6 +3,8 @@
 #include "utilities/commons.h"
 
 /* Command line parameters */
+int port;
+int https_port;
 char *LOGFILE;
 FILE *log_file;
 char *LOCKFILE;
@@ -28,8 +30,8 @@ int main(int args, char **argv) {
   }
 
   /* Read parameters from command line arguments */
-  int port = atoi(argv[1]);   /* port param */
-  int https_port = atoi(argv[2]); /* https port param */
+  port = atoi(argv[1]);   /* port param */
+  https_port = atoi(argv[2]); /* https port param */
   LOGFILE = argv[3];          /* log file param */
   LOCKFILE = argv[4];         /* lock file param */
   WWW_FOLDER = argv[5];       /* www folder param */
@@ -112,7 +114,11 @@ int main(int args, char **argv) {
         continue;
       }
 
-      add_client_to_pool(newfd, NULL, HTTP_CLIENT);
+      char *remote_addr = inet_ntop(clientaddr.sin_family,
+                                    get_in_addr((sockaddr *) &clientaddr),
+                                    remoteIP,
+                                    INET6_ADDRSTRLEN);
+      add_client_to_pool(newfd, NULL, HTTP_CLIENT, remote_addr);
       if (pool.nready <= 0) continue;   /* No more readable descriptors */
     }
 
@@ -136,7 +142,11 @@ int main(int args, char **argv) {
         continue;
       }
 
-      add_client_to_pool(newfd, client_context, HTTPS_CLIENT);
+      char *remote_addr = inet_ntop(clientaddr.sin_family,
+                                    get_in_addr((sockaddr *) &clientaddr),
+                                    remoteIP,
+                                    INET6_ADDRSTRLEN);
+      add_client_to_pool(newfd, client_context, HTTPS_CLIENT, remote_addr);
       if (pool.nready <= 0) continue;   /*No more readable descriptors */
     }
 

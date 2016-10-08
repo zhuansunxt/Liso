@@ -8,6 +8,9 @@ client_pool *p = &pool;
 int listenfd;
 int ssl_socket;
 
+int port;
+int https_port;
+
 /*
  * Initialize client pool with <listenfd> as the only active socket descriptor.
  * After init, client pool is empty with only one listener socket and is ready
@@ -36,7 +39,7 @@ void init_pool() {
 /*
  * Add new client socket descriptor to client pool.
  */
-void add_client_to_pool(int newfd, SSL* client_context, client_type ctype) {
+void add_client_to_pool(int newfd, SSL* client_context, client_type ctype, char *remoteaddr) {
   int i;
   p->nready--;    /* listener socket */
 
@@ -54,6 +57,7 @@ void add_client_to_pool(int newfd, SSL* client_context, client_type ctype) {
       if (p->type[i] == HTTPS_CLIENT) p->context[i] = client_context;
       p->received_header[i] = 0;
       p->should_be_close[i] = 0;
+      p->remote_addr[i] = remoteaddr;
       FD_SET(newfd, &p->master);
       p->maxfd = MAX(newfd, p->maxfd);
       p->maxi = MAX(i, p->maxi);
@@ -106,12 +110,15 @@ void handle_clients() {
 
         set_header_received(clientfd, header_recv_offset);
 
-        http_process_result result = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset);
+        host_and_port has;
+        has.host = p->remote_addr[i];
+        has.port = (p->type[i] == HTTP_CLIENT) ? port : https_port;
+        http_process_result result = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset, has);
         switch (result){
           case ERROR:
             reply_500(p->client_buffer[i]);
           case CLOSE:
-            console_log("Client %d http processing result: CLOSE");
+            console_log("Client %d http processing result: CLOSE", clientfd);
             p->should_be_close[i] = 1;
           case PERSIST:
             p->state[i] = READY_FOR_WRITE;
@@ -168,6 +175,7 @@ void clear_client_by_idx(int client_fd, int idx){
   p->client_fd[idx] = -1;
   free_dbuffer(p->client_buffer[idx]);
   if (p->type[idx] == HTTPS_CLIENT) SSL_free(p->context[idx]);
+  p->remote_addr[idx] = "";
 }
 
 /*
@@ -185,6 +193,7 @@ void clear_client(int client) {
       p->client_fd[idx] = -1;
       free_dbuffer(p->client_buffer[idx]);
       if (p->type[idx] == HTTPS_CLIENT) SSL_free(p->context[idx]);
+      p->remote_addr[idx] = "";
       return ;
     }
   }
@@ -281,11 +290,12 @@ size_t handle_recv_header(int clientfd, char *client_buffer) {
   char *header_end_id = "\r\n\r\n";
   char *header_end = strstr(client_buffer, header_end_id);
   size_t header_len = get_client_buffer_offset(clientfd);
-  if (header_end == NULL){
+  if (header_end == NULL) {
     if (header_len < BUF_SIZE) return 0;
     else return -1;
   } else {
     /* if header is received, this indicates the starting point of the message body. */
-    return (header_end-client_buffer)+strlen(header_end_id);
+    return (header_end - client_buffer) + strlen(header_end_id);
   }
 }
+

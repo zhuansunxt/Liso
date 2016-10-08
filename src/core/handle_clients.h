@@ -37,13 +37,15 @@ typedef struct {
   /* Type */
   client_type type[FD_SETSIZE];               /* client's type: HTTP or HTTPS */
   SSL * context[FD_SETSIZE];                  /* set if client's type is HTTPS */
+
+  char *remote_addr[FD_SETSIZE];
 } client_pool;
 
 extern client_pool pool;
 
 /* -------- Client pool APIs -------- */
 void init_pool();
-void add_client_to_pool(int newfd, SSL*, client_type);
+void add_client_to_pool(int newfd, SSL*, client_type, char*);
 void handle_clients();
 void clear_client_by_idx(int, int);
 void clear_client(int);
@@ -51,7 +53,6 @@ void clear_pool();
 void reset_client_buffer_state_by_idx(int, int);
 void print_pool();
 
-char* append_request(int, char *, ssize_t);
 size_t get_client_buffer_offset(int);
 void set_header_received(int, size_t);
 

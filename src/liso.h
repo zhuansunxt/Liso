@@ -10,6 +10,8 @@
 #define USAGE "\nLiso Server Usage: ./lisod <HTTP port> <log file> <www folder>\n"
 
 /* Command line parameters */
+extern int port;
+extern int https_port;
 extern char *LOGFILE;
 extern FILE *log_file;
 extern char *LOCKFILE;

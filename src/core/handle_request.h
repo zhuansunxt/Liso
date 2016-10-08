@@ -17,10 +17,14 @@ typedef enum http_process_result{
   NOT_ENOUGH_DATA
 }http_process_result;
 
-http_process_result handle_http_request(int, dynamic_buffer *, size_t);
+typedef struct host_and_port {
+    char *host;
+    int port;
+} host_and_port;
+
+http_process_result handle_http_request(int, dynamic_buffer *, size_t, host_and_port);
 void reply_to_client(int, char*);
 int check_http_version(Request *);
-//int send_error(char*, char*, char*);
 
 /* Response APIs */
 int send_response(dynamic_buffer*, char*, char*);
@@ -29,7 +33,7 @@ int send_msg(dynamic_buffer*, char*);
 int sen_msgbody(int, char *);
 
 void get_mime_type(char*, char*);
-void get_header_value(Request*, char*, char*);
+char* get_header_value(Request*, char*);
 
 void free_request(Request *);
 
@@ -43,4 +47,26 @@ void reply_411(dynamic_buffer *);   // Length required
 void reply_500(dynamic_buffer *);   // Internal error
 void reply_501(dynamic_buffer *);   // Not implemented
 void reply_505(dynamic_buffer *);   // Version unsupported
+
+/* CGI */
+#define CGI_ARGS_LEN 2
+#define CGI_ENVP_LEN 22
+#define CGI_ENVP_INFO_MAXLEN 1024
+/* script path from command line */
+char *CGI_scripts;
+
+/* CGI related parameters */
+typedef struct CGI_param {
+    char * filename;
+    char* args[CGI_ARGS_LEN];
+    char* envp[CGI_ENVP_LEN];
+} CGI_param;
+
+CGI_param *init_CGI_param();
+void build_CGI_param(CGI_param*, Request*, host_and_port);
+void print_CGI_param(CGI_param*);
+void free_CGI_param(CGI_param*);
+char *new_string(char *);
+void set_envp_field_by_str (char *, char *, char *, CGI_param*, int);
+void set_envp_field_with_header (Request *, char *, char *, char *, CGI_param*, int);
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H
