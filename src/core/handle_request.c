@@ -16,6 +16,7 @@ char *colon = ":";
 char *default_index_file = "index.html";
 char *server_str = "Liso/1.0";
 
+CGI_pool * cgi_pool;
 
 /*
  * Return 0 when the current connection should be closed.
@@ -24,9 +25,10 @@ char *server_str = "Liso/1.0";
  * The caller of this function should check the return value:
  * TODO: add documentation of return type
  */
-http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len, host_and_port has){
+http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len, host_and_port has) {
 #ifdef DEBUG_VERBOSE
-  console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, client_buffer->buffer, strlen(client_buffer->buffer));
+  console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, client_buffer->buffer,
+              strlen(client_buffer->buffer));
   console_log("[INFO][HTTP] Header Len: %d", header_len);
 #endif
 
@@ -79,37 +81,15 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
     return CLOSE;
   }
 
-  char* cgi_prefix = "/cgi/";
-  char prefix[8]; memset(prefix, 0, 8);
+  char *cgi_prefix = "/cgi/";
+  char prefix[8];
+  memset(prefix, 0, 8);
   if (strlen(request->http_uri) > strlen(cgi_prefix))
-    snprintf(prefix, strlen(cgi_prefix)+1, "%s", request->http_uri);
+    snprintf(prefix, strlen(cgi_prefix) + 1, "%s", request->http_uri);
 
   if (!strcmp(cgi_prefix, prefix)) {       /* Handle dynamic http request */
-    CGI_param* cgi_parameters = init_CGI_param();
-    build_CGI_param(cgi_parameters, request, has);
-    print_CGI_param(cgi_parameters);
-
-    reply_501(client_buffer);
-
-    free_CGI_param(cgi_parameters);
-    return return_value;
-  } else {                                 /* Handle statics http request */
-    char *method = request->http_method;
-
-    if (!strcmp(method, "HEAD"))
-    {
-      reset_dbuffer(client_buffer);
-      do_head(clientfd, request, client_buffer, last_conn);
-      free_request(request);
-    }
-    else if (!strcmp(method, "GET"))
-    {
-      reset_dbuffer(client_buffer);
-      do_get(clientfd, request, client_buffer, last_conn);
-      free_request(request);
-    }
-    else if (!strcmp(method, "POST"))
-    {
+    /* Check whether POST method has enough message body */
+    if (!strcmp(request->http_method, "POST")) {
       /* Check Conteng-Length header field */
       char *content_length_str;
       content_length_str = get_header_value(request, "Content-Length");
@@ -121,15 +101,56 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
 
       size_t content_len = atoi(content_length_str);
       console_log("Content-len : %d + Header-len: %d : Buffer-len: %d", content_len, header_len, client_buffer->offset);
-      if ((content_len+header_len) > client_buffer->offset)
+      if ((content_len + header_len) > client_buffer->offset)
+        return NOT_ENOUGH_DATA;         // post method message body not fully received yet.
+    }
+
+    CGI_param *cgi_parameters = init_CGI_param();
+    build_CGI_param(cgi_parameters, request, has);
+    print_CGI_param(cgi_parameters);
+
+    init_CGI_pool();
+
+    if (!strcmp(request->http_method, "POST")) {
+      size_t cl = atoi(get_header_value(request, "Content-Length"));
+      if (cl > 0) {
+        handle_dynamic_request(clientfd, cgi_parameters, client_buffer->buffer + header_len, cl);
+        return CGI_READY_FOR_WRITE;
+      }
+    }
+    handle_dynamic_request(clientfd, cgi_parameters, NULL, 0);
+    return CGI_READY_FOR_READ;
+  } else {                                 /* Handle statics http request */
+    char *method = request->http_method;
+
+    if (!strcmp(method, "HEAD")) {
+      reset_dbuffer(client_buffer);
+      do_head(clientfd, request, client_buffer, last_conn);
+      free_request(request);
+    } else if (!strcmp(method, "GET")) {
+      reset_dbuffer(client_buffer);
+      do_get(clientfd, request, client_buffer, last_conn);
+      free_request(request);
+    } else if (!strcmp(method, "POST")) {
+      /* Check Conteng-Length header field */
+      char *content_length_str;
+      content_length_str = get_header_value(request, "Content-Length");
+      if (strlen(content_length_str) == 0) {
+        reply_411(client_buffer);
+        free_request(request);
+        return CLOSE;         // close current connection for 411 error.
+      }
+
+      size_t content_len = atoi(content_length_str);
+      console_log("Content-len : %d + Header-len: %d : Buffer-len: %d", content_len, header_len,
+                  client_buffer->offset);
+      if ((content_len + header_len) > client_buffer->offset)
         return NOT_ENOUGH_DATA;         // post method message body not fully received yet.
 
       do_post(clientfd, request, client_buffer, last_conn,
-              client_buffer->buffer+header_len, content_len);
+              client_buffer->buffer + header_len, content_len);
       free_request(request);
-    }
-    else
-    {
+    } else {
       reply_501(client_buffer);
       free_request(request);
     }
@@ -440,7 +461,6 @@ void build_CGI_param(CGI_param * param,  Request *request, host_and_port hap) {
   set_envp_field_by_str("PATH_INFO", path_info, buf, param, index++);
 
   /* envp taken from request */
-
   set_envp_field_with_header(request, "Content-Length", "CONTENT_LENGTH", buf, param, index++);
   set_envp_field_with_header(request, "Content-Type", "CONTENT_TYPE", buf, param, index++);
   set_envp_field_with_header(request, "Accept", "HTTP_ACCEPT", buf, param, index++);
@@ -471,6 +491,7 @@ void print_CGI_param(CGI_param * param) {
     console_log("%d : %s", i+1, param->envp[i]);
     i++;
   }
+  console_log("-------End CGI Para------");
 }
 
 char *new_string(char *str) {
@@ -499,4 +520,218 @@ void free_CGI_param(CGI_param* param) {
     i++;
   }
   free(param);
+}
+
+void init_CGI_pool() {
+  cgi_pool = (CGI_pool *)malloc(sizeof(CGI_pool));
+  int idx = 0;
+  for(; idx < FD_SETSIZE; idx++)
+    cgi_pool->executors[idx] = NULL;
+}
+
+int add_CGI_executor_to_pool(int cliendfd, CGI_param * cgi_parameter) {
+  int idx = 0;
+  for(; idx < FD_SETSIZE; idx++) {
+    if (cgi_pool->executors[idx] == NULL) {     /* Find an available slot */
+      cgi_pool->executors[idx] = (CGI_executor *)malloc(sizeof(CGI_executor));
+      cgi_pool->executors[idx]->clientfd = cliendfd;
+      cgi_pool->executors[idx]->cgi_buffer = (dynamic_buffer*)malloc(sizeof(dynamic_buffer));
+      init_dbuffer(cgi_pool->executors[idx]->cgi_buffer);
+      cgi_pool->executors[idx]->cgi_parameter = cgi_parameter;
+      return idx;
+    }
+  }
+  return -1;
+}
+
+void free_CGI_executor(CGI_executor *executor) {
+  free_dbuffer(executor->cgi_buffer);
+  free_CGI_param(executor->cgi_parameter);
+  free(executor);
+}
+
+void free_CGI_pool() {
+  int idx = 0;
+  for (; idx < FD_SETSIZE; idx++)
+    if (cgi_pool->executors[idx] != NULL)
+      free_CGI_executor(cgi_pool->executors[idx]);
+}
+
+void print_executor(CGI_executor *executor) {
+  console_log("------Executor Info-------");
+  console_log("Client socket: %d", executor->clientfd);
+  console_log("CGI socket to read from %d", executor->stdout_pipe[0]);
+  console_log("CGI socket to write to %d", executor->stdin_pipe[1]);
+  console_log("Buffer state");
+  console_log("-- Buffer Offset: %d", executor->cgi_buffer->offset);
+  console_log("-- Buffer Capacity: %d", executor->cgi_buffer->capacity);
+  console_log("-- Buffer Content: %s", executor->cgi_buffer->buffer);
+  console_log("-----End Executor Info-----");
+}
+
+void print_CGI_pool() {
+  int i = 0;
+  console_log("-------CGI Pool Info--------");
+  while (cgi_pool->executors[i] != NULL) {
+    print_executor(cgi_pool->executors[i]);
+    i++;
+  }
+  console_log("-------END CGI Pool Info--------");
+}
+
+CGI_executor * get_CGI_executor_by_client(int client) {
+  int idx = 0;
+  for (; idx < FD_SETSIZE; idx++) {
+    if ((cgi_pool->executors[idx] != NULL) && (cgi_pool->executors[idx]->clientfd == client)) {
+      return cgi_pool->executors[idx];
+    }
+  }
+  console_log("[WARNING] No executor found for client %d", client);
+  return NULL;
+}
+
+void clear_CGI_executor_by_client(int clientfd) {
+  int idx = 0;
+  for (; idx < FD_SETSIZE; idx++)
+    if (cgi_pool->executors[idx] != NULL && cgi_pool->executors[idx]->clientfd == clientfd) {
+      free_CGI_executor(cgi_pool->executors[idx]);
+      cgi_pool->executors[idx] = NULL;
+    }
+}
+
+void execve_error_handler() {
+  switch (errno)
+  {
+    case E2BIG:
+      fprintf(stderr, "The total number of bytes in the environment \
+(envp) and argument list (argv) is too large.\n");
+      return;
+    case EACCES:
+      fprintf(stderr, "Execute permission is denied for the file or a \
+script or ELF interpreter.\n");
+      return;
+    case EFAULT:
+      fprintf(stderr, "filename points outside your accessible address \
+space.\n");
+      return;
+    case EINVAL:
+      fprintf(stderr, "An ELF executable had more than one PT_INTERP \
+segment (i.e., tried to name more than one \
+interpreter).\n");
+      return;
+    case EIO:
+      fprintf(stderr, "An I/O error occurred.\n");
+      return;
+    case EISDIR:
+      fprintf(stderr, "An ELF interpreter was a directory.\n");
+      return;
+//         case ELIBBAD:
+//             fprintf(stderr, "An ELF interpreter was not in a recognised \
+// format.\n");
+//             return;
+    case ELOOP:
+      fprintf(stderr, "Too many symbolic links were encountered in \
+resolving filename or the name of a script \
+or ELF interpreter.\n");
+      return;
+    case EMFILE:
+      fprintf(stderr, "The process has the maximum number of files \
+open.\n");
+      return;
+    case ENAMETOOLONG:
+      fprintf(stderr, "filename is too long.\n");
+      return;
+    case ENFILE:
+      fprintf(stderr, "The system limit on the total number of open \
+files has been reached.\n");
+      return;
+    case ENOENT:
+      fprintf(stderr, "The file filename or a script or ELF interpreter \
+does not exist, or a shared library needed for \
+file or interpreter cannot be found.\n");
+      return;
+    case ENOEXEC:
+      fprintf(stderr, "An executable is not in a recognised format, is \
+for the wrong architecture, or has some other \
+format error that means it cannot be \
+executed.\n");
+      return;
+    case ENOMEM:
+      fprintf(stderr, "Insufficient kernel memory was available.\n");
+      return;
+    case ENOTDIR:
+      fprintf(stderr, "A component of the path prefix of filename or a \
+script or ELF interpreter is not a directory.\n");
+      return;
+    case EPERM:
+      fprintf(stderr, "The file system is mounted nosuid, the user is \
+not the superuser, and the file has an SUID or \
+SGID bit set.\n");
+      return;
+    case ETXTBSY:
+      fprintf(stderr, "Executable was open for writing by one or more \
+processes.\n");
+      return;
+    default:
+      fprintf(stderr, "Unkown error occurred with execve().\n");
+      return;
+  }
+}
+
+void handle_dynamic_request(int cliendfd, CGI_param *cgi_parameter, char *post_body, size_t content_length) {
+  int slot = 0;
+  for (; slot < FD_SETSIZE; slot++) {
+    if (cgi_pool->executors[slot] == NULL) {
+      cgi_pool->executors[slot] = (CGI_executor *)malloc(sizeof(CGI_executor));
+      cgi_pool->executors[slot]->clientfd = cliendfd;
+      cgi_pool->executors[slot]->cgi_parameter = cgi_parameter;
+
+      cgi_pool->executors[slot]->cgi_buffer = (dynamic_buffer*)malloc(sizeof(dynamic_buffer));
+      init_dbuffer(cgi_pool->executors[slot]->cgi_buffer);
+      if (content_length > 0) {
+        /* Message body, have to write to CGI process */
+        append_content_dbuffer(cgi_pool->executors[slot]->cgi_buffer, post_body, content_length);
+      }
+      break;
+    }
+  }
+
+  if (slot == FD_SETSIZE) {
+    err_sys("[Fatal] No available space for more cgi executors");
+  }
+
+  pid_t pid;
+
+  if (pipe(cgi_pool->executors[slot]->stdin_pipe) < 0) {
+    err_sys("[Fatal] Error piping for stdin for cliend %d", cliendfd);
+  }
+
+  if (pipe(cgi_pool->executors[slot]->stdout_pipe) < 0) {
+    err_sys("[Fatal] Error piping for stdin for cliend %d", cliendfd);
+  }
+
+  pid = fork();
+  if (pid < 0) {
+    err_sys("[Fatal] Error forking child CGI process for client %d", cliendfd);
+  }
+
+  if (pid == 0) {     /* Child CGI process */
+    close(cgi_pool->executors[slot]->stdin_pipe[1]);
+    close(cgi_pool->executors[slot]->stdout_pipe[0]);
+    dup2(cgi_pool->executors[slot]->stdin_pipe[0], fileno(stdin));
+    dup2(cgi_pool->executors[slot]->stdout_pipe[1], fileno(stdout));
+
+    /* Execute CGI Script */
+    if (execve(cgi_pool->executors[slot]->cgi_parameter->filename,
+               cgi_pool->executors[slot]->cgi_parameter->args,
+               cgi_pool->executors[slot]->cgi_parameter->envp)) {
+      execve_error_handler();
+      err_sys("[Fatal] Error executing CGI script for cliend %d", cliendfd);
+    }
+  }
+
+  if (pid > 0) {
+    close(cgi_pool->executors[slot]->stdin_pipe[0]);
+    close(cgi_pool->executors[slot]->stdout_pipe[1]);
+  }
 }

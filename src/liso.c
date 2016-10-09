@@ -114,7 +114,7 @@ int main(int args, char **argv) {
         continue;
       }
 
-      char *remote_addr = inet_ntop(clientaddr.sin_family,
+      char *remote_addr = (char*)inet_ntop(clientaddr.sin_family,
                                     get_in_addr((sockaddr *) &clientaddr),
                                     remoteIP,
                                     INET6_ADDRSTRLEN);
@@ -142,7 +142,7 @@ int main(int args, char **argv) {
         continue;
       }
 
-      char *remote_addr = inet_ntop(clientaddr.sin_family,
+      char *remote_addr = (char*)inet_ntop(clientaddr.sin_family,
                                     get_in_addr((sockaddr *) &clientaddr),
                                     remoteIP,
                                     INET6_ADDRSTRLEN);

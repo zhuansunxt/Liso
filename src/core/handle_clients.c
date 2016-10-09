@@ -74,6 +74,36 @@ void add_client_to_pool(int newfd, SSL* client_context, client_type ctype, char 
   }
 }
 
+void add_cgi_fd_to_pool(int clientfd, int cgi_fd, client_state state) {
+  int i;
+
+  for (i = 0; i < FD_SETSIZE; i++) {
+    if (p->client_fd[i] < 0) {
+      p->client_fd[i] = cgi_fd;
+      FD_SET(cgi_fd, &p->master);
+      p->state[i] = state;
+      p->cgi_client[i] = clientfd;
+      p->maxfd = MAX(cgi_fd, p->maxfd);
+      p->maxi = MAX(i, p->maxi);
+      break;
+    }
+  }
+}
+
+void clear_cgi_from_pool(int clientfd) {
+  int i;
+  for (i = 0; i < FD_SETSIZE; i++) {
+    if (p->cgi_client[i] == clientfd) {
+      FD_CLR(p->client_fd[i], &p->master);
+      p->client_fd[i] = -1;
+      p->state[i] = READY_FOR_READ;
+      p->cgi_client[i] = -1;
+      break;
+    }
+  }
+}
+
+
 void handle_clients() {
   ssize_t  nbytes;
   int i, clientfd;
@@ -114,6 +144,7 @@ void handle_clients() {
         has.host = p->remote_addr[i];
         has.port = (p->type[i] == HTTP_CLIENT) ? port : https_port;
         http_process_result result = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset, has);
+        CGI_executor *executor;
         switch (result){
           case ERROR:
             reply_500(p->client_buffer[i]);
@@ -125,6 +156,30 @@ void handle_clients() {
             break;
           case NOT_ENOUGH_DATA:
             continue;                           /* Upon not-enough-data result: keep state same and just move on */
+          case CGI_READY_FOR_WRITE:
+            console_log("Client %d http processing result: CGI_READY_FOR_WRITE", clientfd);
+            /* CGI request with message body to write */
+            reset_dbuffer(p->client_buffer[i]);
+            p->state[i] = WAITING_FOR_CGI;
+
+            executor = get_CGI_executor_by_client(clientfd);
+            if (executor == NULL){
+              console_log("[ERROR] Can not get CGI executor to read from on client %d", clientfd);
+            }
+            add_cgi_fd_to_pool(clientfd, executor->stdin_pipe[1], CGI_FOR_WRITE);
+            break;
+          case CGI_READY_FOR_READ:
+            console_log("Client %d http processing result: CGI_READY_FOR_READ", clientfd);
+            /* CGI request ready for reading from CGI process */
+            reset_dbuffer(p->client_buffer[i]);
+            p->state[i] = WAITING_FOR_CGI;
+
+            executor = get_CGI_executor_by_client(clientfd);
+            if (executor == NULL) {
+              console_log("[ERROR] Can not get CGI executor to read from on client %d", clientfd);
+            }
+            add_cgi_fd_to_pool(clientfd, executor->stdout_pipe[0], CGI_FOR_READ);
+            break;
           default:
             break;
         }
@@ -158,7 +213,55 @@ void handle_clients() {
 
       if (client_buffer->send_offset >= client_buffer->offset) {
         reset_client_buffer_state_by_idx(clientfd, i);
+        p->received_header[i] = 0;
+        p->state[i] = READY_FOR_READ;
         if (p->should_be_close[i] == 1) clear_client_by_idx(clientfd, i);
+      }
+      p->nready--;
+    }
+    if (FD_ISSET(clientfd, &p->write_fds) && p->state[i] == CGI_FOR_WRITE) {
+      console_log("Client %d 's CGI ready for being written to!", clientfd);
+      CGI_executor *executor = get_CGI_executor_by_client(&p->cgi_client[i]);
+      if (executor == NULL) {
+        console_log("[Error] Can not get client %d's cgi executor", p->cgi_client[i]);
+      }
+      dynamic_buffer *cgi_write_buffer = executor->cgi_buffer;
+
+      size_t write_granularity = BUF_SIZE;
+      size_t write_len = MIN(write_granularity, cgi_write_buffer->offset - cgi_write_buffer->send_offset);
+      size_t sent_bytes = write(executor->stdin_pipe[1],
+                                cgi_write_buffer->buffer+cgi_write_buffer->send_offset, write_len);
+      cgi_write_buffer->send_offset += sent_bytes;
+
+      if (cgi_write_buffer->send_offset >= cgi_write_buffer->offset) {
+        reset_dbuffer(executor->cgi_buffer);
+        p->state[i] = CGI_FOR_READ;
+      }
+      p->nready--;
+    }
+    if (FD_ISSET(clientfd, &p->read_fds) && p->state[i] == CGI_FOR_READ) {
+      console_log("Client %d 's CGI ready for being read from!", clientfd);
+      CGI_executor *executor = get_CGI_executor_by_client(p->cgi_client[i]);
+      if (executor == NULL) {
+        console_log("[Error] Can not get client %d's cgi executor", p->cgi_client[i]);
+      }
+      char cgi_buff[BUF_SIZE];
+      int read_ret;
+      dynamic_buffer *client_buffer;
+      if ((read_ret = read(executor->stdout_pipe[0], cgi_buff, BUF_SIZE)) > 0) {
+        client_buffer = get_client_buffer_by_client(p->cgi_client[i]);
+        append_content_dbuffer(client_buffer, cgi_buff, read_ret);
+      }
+
+      if (read_ret == 0) {
+        int client_idx = get_client_index(p->cgi_client[i]);
+        p->state[get_client_index(p->cgi_client[i])] = READY_FOR_WRITE;
+
+        /* Clear CGI related resources */
+        close(executor->stdin_pipe[1]);
+        close(executor->stdout_pipe[0]);
+        clear_cgi_from_pool(executor->clientfd);
+        clear_CGI_executor_by_client(executor->clientfd);
       }
       p->nready--;
     }
@@ -225,11 +328,41 @@ void print_pool() {
   for (i = 0; i <= p->maxi; i++) {
     console_log("<Position %d>", i);
     console_log("---> Clientfd: %d", p->client_fd[i]);
-    console_log("---> Client State: %s", (p->state == READY_FOR_READ) ? "READY_FOR_READ" : "READY_FOR_WRITE");
+    switch (p->state[i]) {
+      case READY_FOR_READ:
+        console_log("---> Client State: READY_FOR_READ");
+        break;
+      case READY_FOR_WRITE:
+        console_log("---> Client State: READY_FOR_WRITE");
+        break;
+      case CGI_FOR_READ:
+        console_log("---> Client State: CGI_FOR_READ");
+        console_log("---> Client Sockets: %d", p->cgi_client[i]);
+        break;
+      case CGI_FOR_WRITE:
+        console_log("---> Client State: CGI_FOR_WRITE");
+        console_log("---> Client Sockets: %d", p->cgi_client[i]);
+        break;
+      case WAITING_FOR_CGI:
+        console_log("---> Client State: WAITING_FOR_CGI");
+        break;
+      default:
+        break;
+    }
     console_log("---> Client Type: %s", (p->type == HTTP_CLIENT) ? "HTTP" : "HTTPS");
     console_log("---> Received Header Yet? : %s", ((int)p->received_header[i] == 0) ? "No" : "Yes");
   }
   console_log("*****************************************************************");
+}
+
+int get_client_index(int client) {
+  int idx = 0;
+  for (; idx < FD_SETSIZE; idx++) {
+    if (p->client_fd[idx] == client) {
+      return idx;
+    }
+  }
+  return -1;
 }
 
 /*
@@ -276,9 +409,17 @@ void set_header_received(int client, size_t offset) {
  */
 void reset_client_buffer_state_by_idx(int client, int idx) {
   reset_dbuffer(p->client_buffer[idx]);
-  p->received_header[idx] = 0;
-  p->state[idx] = READY_FOR_READ;
   return ;
+}
+
+dynamic_buffer* get_client_buffer_by_client(int client) {
+  int idx = 0;
+  for (; idx < FD_SETSIZE; idx++) {
+    if (p->client_fd[idx] == client) {
+      return p->client_buffer[idx];
+    }
+  }
+  return NULL;
 }
 
 /*

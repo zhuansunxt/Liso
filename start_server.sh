@@ -7,7 +7,7 @@ HTTPS_PORT=10000
 LOG_FILE=$PATH/lisod.log
 LOCK_FILE=$PATH/lisod.lock
 WWW_FOLDER=$PATH/www
-CGI=-
+CGI=$PATH/cgi_script.py
 KEY_FILE=$PATH/xiaotons.key
 CA=$PATH/xiaotons.crt
 

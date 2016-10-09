@@ -14,7 +14,9 @@ typedef enum http_process_result{
   ERROR,
   CLOSE,
   PERSIST,
-  NOT_ENOUGH_DATA
+  NOT_ENOUGH_DATA,    /* for POST method */
+  CGI_READY_FOR_READ,
+  CGI_READY_FOR_WRITE
 }http_process_result;
 
 typedef struct host_and_port {
@@ -62,6 +64,20 @@ typedef struct CGI_param {
     char* envp[CGI_ENVP_LEN];
 } CGI_param;
 
+typedef struct CGI_executor {
+  int clientfd;
+  int stdin_pipe[2];    /* { write data --> stdin_pipe[1] } -> { stdin_pipe[0] --> stdin } */
+  int stdout_pipe[2];   /* { read data <--  stdout_pipe[0] } <-- {stdout_pipe[1] <-- stdout } */
+  dynamic_buffer* cgi_buffer;
+  CGI_param* cgi_parameter;
+} CGI_executor;
+
+typedef struct CGI_pool {
+  CGI_executor* executors[FD_SETSIZE];
+} CGI_pool;
+
+extern CGI_pool * cgi_pool;
+
 CGI_param *init_CGI_param();
 void build_CGI_param(CGI_param*, Request*, host_and_port);
 void print_CGI_param(CGI_param*);
@@ -69,4 +85,17 @@ void free_CGI_param(CGI_param*);
 char *new_string(char *);
 void set_envp_field_by_str (char *, char *, char *, CGI_param*, int);
 void set_envp_field_with_header (Request *, char *, char *, char *, CGI_param*, int);
+
+void init_CGI_pool();
+//CGI_executor* init_CGI_executor();
+//int add_CGI_executor_to_pool(int cliendfd, CGI_param * cgi_parameter);
+void free_CGI_executor(CGI_executor *executor);
+void free_CGI_pool();
+void print_executor(CGI_executor *);
+void print_CGI_pool();
+CGI_executor * get_CGI_executor_by_client(int clientfd);
+void clear_CGI_executor_by_client(int clientfd);
+
+void execve_error_handler();
+void handle_dynamic_request(int cliendfd, CGI_param *cgi_parameter, char *post_body, size_t content_length);
 #endif //INC_15_441_PROJECT_1_HANDLE_REQUEST_H

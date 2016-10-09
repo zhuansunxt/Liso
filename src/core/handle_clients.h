@@ -9,9 +9,11 @@
 #include "handle_request.h"
 
 typedef enum client_state {
-    AWAITNG_COMPLETE_HEADER,
     READY_FOR_READ,
     READY_FOR_WRITE,
+    WAITING_FOR_CGI,
+    CGI_FOR_READ,
+    CGI_FOR_WRITE
 } client_state;
 
 typedef enum client_type {
@@ -39,6 +41,9 @@ typedef struct {
   SSL * context[FD_SETSIZE];                  /* set if client's type is HTTPS */
 
   char *remote_addr[FD_SETSIZE];
+
+  /* CGI related */
+  int cgi_client[FD_SETSIZE];
 } client_pool;
 
 extern client_pool pool;
@@ -46,11 +51,14 @@ extern client_pool pool;
 /* -------- Client pool APIs -------- */
 void init_pool();
 void add_client_to_pool(int newfd, SSL*, client_type, char*);
+void add_cgi_fd_to_pool(int clientfd, int cgi_fd, client_state state);
 void handle_clients();
 void clear_client_by_idx(int, int);
 void clear_client(int);
 void clear_pool();
+int get_client_index(int client);
 void reset_client_buffer_state_by_idx(int, int);
+dynamic_buffer* get_client_buffer_by_client(int);
 void print_pool();
 
 size_t get_client_buffer_offset(int);
