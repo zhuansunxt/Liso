@@ -1,76 +1,84 @@
 #include "handle_clients.h"
 
 /* Global client pool */
-client_pool pool;
-client_pool *p = &pool;
+client_pool *p;
 
-/* Global socket */
-int listenfd;
-int ssl_socket;
+/* Global sockets server listen to*/
+int listenfd;       /* HTTP accept socket */
+int ssl_socket;     /* HTTPS accept socket */
 
+/* Global ports */
 int port;
 int https_port;
 
-/*
- * Initialize client pool with <listenfd> as the only active socket descriptor.
- * After init, client pool is empty with only one listener socket and is ready
- * for accepting client requests.
- */
+/* Initialize client pool */
 void init_pool() {
+  p = (client_pool*)malloc(sizeof(client_pool));
+
+  /* Init pool's global data */
   FD_ZERO(&p->master);
   FD_ZERO(&p->read_fds);
+  FD_ZERO(&p->write_fds);
   FD_SET(listenfd, &p->master);
   FD_SET(ssl_socket, &p->master);
-
-  console_log("[Init Pool] http socket : %d, https socket: %d", listenfd, ssl_socket);
   p->maxfd = MAX(listenfd, ssl_socket);
   p->nready = 0;
-  p->maxi = -1;
+  p->maxi = 0;
+
+  /* Init client's specifc data */
   int i;
   for (i = 0; i < FD_SETSIZE; i++) {
     p->client_fd[i] = -1;     /* - 1 indicates avaialble entry */
     p->client_buffer[i] = NULL;
+    p->back_up_buffer[i] = NULL;
     p->received_header[i] = 0;
     p->should_be_close[i] = 0;
+    p->state[i] = INVALID;
+    p->remote_addr[i] = NULL;
+
+    /* SSL */
+    p->type[i] = INVALID_CLIENT;
     p->context[i] = NULL;
+
+    /* CGI */
+    p->cgi_client[i] = -1;
   }
 }
 
-/*
- * Add new client socket descriptor to client pool.
- */
 void add_client_to_pool(int newfd, SSL* client_context, client_type ctype, char *remoteaddr) {
   int i;
   p->nready--;    /* listener socket */
 
   for (i = 0; i < FD_SETSIZE; i++) {
-    if (p->client_fd[i] < 0) {
-      /* Find a available entry */
-      p->client_fd[i] = newfd;
+    if (p->client_fd[i] < 0) {  /* Find a available entry */
 
-      /* Initialize client buffer */
-      p->client_buffer[i] = (dynamic_buffer*)malloc(sizeof(dynamic_buffer));
-      init_dbuffer(p->client_buffer[i]);
-
-      p->state[i] = READY_FOR_READ;
-      p->type[i] = ctype;
-      if (p->type[i] == HTTPS_CLIENT) p->context[i] = client_context;
-      p->received_header[i] = 0;
-      p->should_be_close[i] = 0;
-      p->remote_addr[i] = remoteaddr;
+      /* Update global data */
       FD_SET(newfd, &p->master);
       p->maxfd = MAX(newfd, p->maxfd);
       p->maxi = MAX(i, p->maxi);
+
+      /* Initialize client specific data */
+      p->client_fd[i] = newfd;
+      p->client_buffer[i] = (dynamic_buffer*)malloc(sizeof(dynamic_buffer));
+      init_dbuffer(p->client_buffer[i]);
+      p->received_header[i] = 0;
+      p->should_be_close[i] = 0;
+      p->state[i] = READY_FOR_READ;
+      p->remote_addr[i] = remoteaddr;
+
+      /* SSL */
+      p->type[i] = ctype;
+      if (p->type[i] == HTTPS_CLIENT) p->context[i] = client_context;
+
+      /* CGI */
+      p->cgi_client[i] = -1;
       break;
     }
   }
 
   if (i == FD_SETSIZE) {
     /* Coundn't find available slot in pool */
-#ifdef DEBUG_VERBOSE
-    console_log("[Client pool] Too many clients! No available slot for new client connection");
-#endif
-    dump_log("[ERROR] Too many clients! No available slot for new client connection");
+    err_sys("No available slot for new client connection");
   }
 }
 
@@ -79,14 +87,23 @@ void add_cgi_fd_to_pool(int clientfd, int cgi_fd, client_state state) {
 
   for (i = 0; i < FD_SETSIZE; i++) {
     if (p->client_fd[i] < 0) {
-      p->client_fd[i] = cgi_fd;
+      /* Update global data */
       FD_SET(cgi_fd, &p->master);
-      p->state[i] = state;
-      p->cgi_client[i] = clientfd;
       p->maxfd = MAX(cgi_fd, p->maxfd);
       p->maxi = MAX(i, p->maxi);
+
+      /* Update client data */
+      p->client_fd[i] = cgi_fd;
+      p->state[i] = state;
+
+      /* CGI */
+      p->cgi_client[i] = clientfd;
       break;
     }
+  }
+  if (i == FD_SETSIZE) {
+    /* Coundn't find available slot in pool */
+    err_sys("No available slot for new cgi process fd");
   }
 }
 
@@ -94,15 +111,92 @@ void clear_cgi_from_pool(int clientfd) {
   int i;
   for (i = 0; i < FD_SETSIZE; i++) {
     if (p->cgi_client[i] == clientfd) {
+      /* Update global data */
       FD_CLR(p->client_fd[i], &p->master);
+
+      /* Update client data */
+      close(p->client_fd[i]);
       p->client_fd[i] = -1;
-      p->state[i] = READY_FOR_READ;
+      if (p->client_buffer[i] != NULL) free_dbuffer(p->client_buffer[i]);
+      if (p->back_up_buffer[i] != NULL) free_dbuffer(p->back_up_buffer[i]);
+      p->client_buffer[i] = NULL;
+      p->back_up_buffer[i] = NULL;
+      p->received_header[i] = 0;
+      p->should_be_close[i] = 0;
+      p->state[i] = INVALID;
+      p->remote_addr[i] = NULL;
+
+      /* SSL */
+      if (p->type[i] == HTTPS_CLIENT && p->context[i] != NULL) SSL_free(p->context[i]);
+      p->type[i] = INVALID_CLIENT;
+      p->context[i] = NULL;
+
+      /* CGI */
       p->cgi_client[i] = -1;
       break;
     }
   }
+
+  if (i == FD_SETSIZE) {
+    /* Coundn't find available slot in pool */
+#ifdef DEBUG_VERBOSE
+    console_log("[clear cgi from pool] No cgi info of client %d", clientfd);
+#endif
+    dump_log("[clear cgi from pool] No cgi info of client %d", clientfd);
+  }
 }
 
+void clear_client_by_idx(int client_fd, int idx){
+  /* Update global data */
+  FD_CLR(client_fd, &p->master);
+
+  /* Update client data */
+  close(client_fd);
+  p->client_fd[idx] = -1;
+  if (p->client_buffer[idx] != NULL) free_dbuffer(p->client_buffer[idx]);
+  if (p->back_up_buffer[idx] != NULL) free_dbuffer(p->back_up_buffer[idx]);
+  p->client_buffer[idx] = NULL;
+  p->back_up_buffer[idx] = NULL;
+  p->received_header[idx] = 0;
+  p->should_be_close[idx] = 0;
+  p->state[idx] = INVALID;
+  p->remote_addr[idx] = NULL;
+
+  /* SSL */
+  if (p->type[idx] == HTTPS_CLIENT && p->context[idx] != NULL) SSL_free(p->context[idx]);
+  p->type[idx] = INVALID_CLIENT;
+  p->context[idx] = NULL;
+
+  /* CGI */
+  p->cgi_client[idx] = -1;
+}
+
+void clear_client(int client) {
+  int idx, cliendfd;
+
+  for (idx = 0; idx < FD_SETSIZE; idx++) {
+    cliendfd = p->client_fd[idx];
+    if (cliendfd == client) {
+      clear_client_by_idx(client, idx);
+      break;
+    }
+  }
+#ifdef DEBUG_VERBOSE
+  console_log("[clear client] client not found when clearing client %d", client);
+#endif
+  dump_log("[clear client] Client not found when clearing client %d", client);
+}
+
+void clear_pool() {
+  int i, clientfd;
+  for (i = 0; i < FD_SETSIZE; i++) {
+    clientfd = p->client_fd[i];
+    if (clientfd > 0) {
+      clear_client_by_idx(clientfd, i);
+    }
+  }
+  free(p);
+}
 
 void handle_clients() {
   ssize_t  nbytes;
@@ -123,12 +217,18 @@ void handle_clients() {
         nbytes = SSL_read(p->context[i], buf, BUF_SIZE);
 
       if (nbytes > 0) {
+        /* Check whether this client has historical pending request data */
+        if (p->back_up_buffer[i] != NULL) {
+          append_content_dbuffer(p->client_buffer[i], p->back_up_buffer[i]->buffer, p->back_up_buffer[i]->offset);
+          free_dbuffer(p->back_up_buffer[i]);
+          p->back_up_buffer[i] = NULL;
+        }
+
         append_content_dbuffer(p->client_buffer[i], buf, nbytes);
 
         /* Check whether received request content has complete HTTP header.
          * If <clrfclrf> is detected, *or* current header_len is larger than
          * BUF_SIZE(8192), we send received accumulated buffer to HTTP handler.*/
-
         size_t header_recv_offset = handle_recv_header(clientfd, p->client_buffer[i]->buffer);
         if (header_recv_offset == 0) {
           continue;
@@ -143,19 +243,33 @@ void handle_clients() {
         host_and_port has;
         has.host = p->remote_addr[i];
         has.port = (p->type[i] == HTTP_CLIENT) ? port : https_port;
-        http_process_result result = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset, has);
+
+        dynamic_buffer * pending_request = (dynamic_buffer*)malloc(sizeof(dynamic_buffer));
+        init_dbuffer(pending_request);
+        http_process_result result = handle_http_request(clientfd, p->client_buffer[i], header_recv_offset, has, pending_request);
+        if (result != PENDING_REQUEST) {
+          free_dbuffer(pending_request);
+          p->back_up_buffer[i] = NULL;
+        }
+
         CGI_executor *executor;
+
         switch (result){
           case ERROR:
             reply_500(p->client_buffer[i]);
           case CLOSE:
-            console_log("Client %d http processing result: CLOSE", clientfd);
             p->should_be_close[i] = 1;
+            p->state[i] = READY_FOR_WRITE;
+            break;
+          case PENDING_REQUEST:
+            p->back_up_buffer[i] = pending_request;
           case PERSIST:
             p->state[i] = READY_FOR_WRITE;
             break;
           case NOT_ENOUGH_DATA:
-            continue;                           /* Upon not-enough-data result: keep state same and just move on */
+            continue;
+          case CGI_READY_FOR_WRITE_CLOSE:
+            p->should_be_close[i] = 1;
           case CGI_READY_FOR_WRITE:
             console_log("Client %d http processing result: CGI_READY_FOR_WRITE", clientfd);
             /* CGI request with message body to write */
@@ -168,9 +282,10 @@ void handle_clients() {
             }
             add_cgi_fd_to_pool(clientfd, executor->stdin_pipe[1], CGI_FOR_WRITE);
             break;
+          case CGI_READY_FOR_READ_CLOSE:
+            p->should_be_close[i] = 1;
           case CGI_READY_FOR_READ:
             console_log("Client %d http processing result: CGI_READY_FOR_READ", clientfd);
-            /* CGI request ready for reading from CGI process */
             reset_dbuffer(p->client_buffer[i]);
             p->state[i] = WAITING_FOR_CGI;
 
@@ -216,12 +331,19 @@ void handle_clients() {
         p->received_header[i] = 0;
         p->state[i] = READY_FOR_READ;
         if (p->should_be_close[i] == 1) clear_client_by_idx(clientfd, i);
+#ifdef DEBUG_VERBOSE
+        console_log("End handling request for client %d", clientfd);
+        print_pool();
+        print_CGI_pool();
+#endif
       }
       p->nready--;
     }
     if (FD_ISSET(clientfd, &p->write_fds) && p->state[i] == CGI_FOR_WRITE) {
       console_log("Client %d 's CGI ready for being written to!", clientfd);
-      CGI_executor *executor = get_CGI_executor_by_client(&p->cgi_client[i]);
+      print_pool();
+      print_CGI_pool();
+      CGI_executor *executor = get_CGI_executor_by_client(p->cgi_client[i]);
       if (executor == NULL) {
         console_log("[Error] Can not get client %d's cgi executor", p->cgi_client[i]);
       }
@@ -269,66 +391,25 @@ void handle_clients() {
   } // End for loop.
 } // End function.
 
-/*
- * Remove client from pool and release all corrsponding resources.
- */
-void clear_client_by_idx(int client_fd, int idx){
-  close(client_fd);
-  FD_CLR(client_fd, &p->master);
-  p->client_fd[idx] = -1;
-  free_dbuffer(p->client_buffer[idx]);
-  if (p->type[idx] == HTTPS_CLIENT) SSL_free(p->context[idx]);
-  p->remote_addr[idx] = "";
-}
-
-/*
- * Clear resource associated with client
- */
-void clear_client(int client) {
-  int idx, cliendfd;
-
-  for (idx = 0; idx < FD_SETSIZE; idx++) {
-    cliendfd = p->client_fd[idx];
-    if (cliendfd == client) {
-      /* Free resources and reset all states */
-      close(cliendfd);
-      FD_CLR(cliendfd, &p->master);
-      p->client_fd[idx] = -1;
-      free_dbuffer(p->client_buffer[idx]);
-      if (p->type[idx] == HTTPS_CLIENT) SSL_free(p->context[idx]);
-      p->remote_addr[idx] = "";
-      return ;
-    }
-  }
-  // no such client to be found
-#ifdef DEBUG_VERBOSE
-  console_log("[INFO] Client not found when clearing client %d", client);
-#endif
-  dump_log("[INFO] Client not found when clearing client %d", client);
-}
-
-/*
- * Clear pool. Only call this when server crash.
- */
-void clear_pool() {
-  int i, clientfd;
-  for (i = 0; i < FD_SETSIZE; i++) {
-    clientfd = p->client_fd[i];
-    if (clientfd > 0) clear_client_by_idx(clientfd, i);
-  }
-}
-
-/*
- * Print out client pool's current state.
- * For debug usage.
- */
 void print_pool() {
   int i;
   console_log("***********************Current Pool State************************");
+  console_log("** maxfd: %d", p->maxfd);
+  console_log("** maxi: %d", p->maxi);
   for (i = 0; i <= p->maxi; i++) {
     console_log("<Position %d>", i);
     console_log("---> Clientfd: %d", p->client_fd[i]);
+    console_log("---> Client Buffer Info");
+    print_dbuffer(p->client_buffer[i]);
+    console_log("---> Client Backup Buffer Info");
+    print_dbuffer(p->back_up_buffer[i]);
+    console_log("---> Received Header Yet? : %s", ((int)p->received_header[i] == 0) ? "No" : "Yes");
+    console_log("---> Received Should Be Closed Yet? : %s", ((int)p->should_be_close[i] == 0) ? "No" : "Yes");
+    console_log("---> Remote Addr: %s", (p->remote_addr[i] == NULL) ? "None" : p->remote_addr[i]);
     switch (p->state[i]) {
+      case INVALID:
+        console_log("---> Client State: INVALID");
+        break;
       case READY_FOR_READ:
         console_log("---> Client State: READY_FOR_READ");
         break;
@@ -347,17 +428,35 @@ void print_pool() {
         console_log("---> Client State: WAITING_FOR_CGI");
         break;
       default:
+        console_log("---> Client State: UNKNOWN STATE");
         break;
     }
-    console_log("---> Client Type: %s", (p->type == HTTP_CLIENT) ? "HTTP" : "HTTPS");
-    console_log("---> Received Header Yet? : %s", ((int)p->received_header[i] == 0) ? "No" : "Yes");
+
+    switch (p->type[i]) {
+      case HTTP_CLIENT:
+        console_log("---> Client Type: HTTP");
+        break;
+      case HTTPS_CLIENT:
+        console_log("---> Client Type: HTTPS");
+        break;
+      case INVALID_CLIENT:
+        console_log("---> Client Type: INVALID");
+        break;
+      default:
+        console_log("---> Client State: UNKNOWN TYPE");
+        break;
+    }
   }
-  console_log("*****************************************************************");
+  console_log("*******************End Current Pool State********************");
 }
 
+/*
+ * Given client socket, return client index in pool.
+ * Do not use for CGI fd as argument.
+ * */
 int get_client_index(int client) {
   int idx = 0;
-  for (; idx < FD_SETSIZE; idx++) {
+  for (; idx <= p->maxi; idx++) {
     if (p->client_fd[idx] == client) {
       return idx;
     }
@@ -367,24 +466,26 @@ int get_client_index(int client) {
 
 /*
  * Get client buffer's offset, which is current length of request content.
+ * Return -1 when not found.
+ * Do not use for CGI fd as argument.
  */
 size_t get_client_buffer_offset(int client) {
   int i;
   int clientfd;
   for (i = 0; (i <= p->maxi); i++) {
     clientfd = p->client_fd[i];
-    if (clientfd == client) return p->client_buffer[i]->offset;
+    if (clientfd == client && p->client_buffer[i] != NULL) return p->client_buffer[i]->offset;
   }
   // no such client to be found
 #ifdef DEBUG_VERBOSE
-  console_log("[INFO] Client not found when trying to get buffer offset");
+  console_log("[get client buffer offset] Client not found when trying to get buffer offset");
 #endif
-  dump_log("[INFO] Client not found when trying to get buffer offset");
+  dump_log("[get client buffer offset] Client not found when trying to get buffer offset");
   return -1;
 }
 
 /*
- * Set a client's state from <header not received> to <header received>
+ * Do not use for CGI fd as argument.
  */
 void set_header_received(int client, size_t offset) {
   int i, clientfd;
@@ -398,27 +499,34 @@ void set_header_received(int client, size_t offset) {
   }
   // no such client to be found
 #ifdef DEBUG_VERBOSE
-  console_log("[INFO] Client not found when setting received header to be true");
+  console_log("[set header received] Client not found when setting received header to be true");
 #endif
-  dump_log("[INFO] Client not found when setting received header to be true");
+  dump_log("[set header received] Client not found when setting received header to be true");
 }
 
-/*
- * Used for pipelined request. If connection should be kept alive, upon finish
- * the response, reset client's state to wait for next HTTP request.
- */
 void reset_client_buffer_state_by_idx(int client, int idx) {
-  reset_dbuffer(p->client_buffer[idx]);
-  return ;
+  if (p->client_buffer[idx] != NULL) {
+    reset_dbuffer(p->client_buffer[idx]);
+  } else {
+#ifdef DEBUG_VERBOSE
+    console_log("[reset client buffer] client %d buffer is NULL", client);
+#endif
+    dump_log("[reset client buffer] client %d buffer is NULL", client);
+  }
 }
 
 dynamic_buffer* get_client_buffer_by_client(int client) {
   int idx = 0;
   for (; idx < FD_SETSIZE; idx++) {
-    if (p->client_fd[idx] == client) {
+    if (p->client_fd[idx] == client && p->client_buffer[idx] != NULL) {
       return p->client_buffer[idx];
     }
   }
+
+#ifdef DEBUG_VERBOSE
+  console_log("[get client buffer by idx] client %d buffer not found", client);
+#endif
+  dump_log("[get client buffer by idx] client %d buffer not found", client);
   return NULL;
 }
 

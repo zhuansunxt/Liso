@@ -1,6 +1,13 @@
 Consider these potential vulnerabilities:
 
-- Buffer overflow
-- Unknown request/Invalid headers
-- Abrupt leaving client
-- Concurrency
+1. Potential Buffer Overflow
+
+   Currently the implementation chooses to map all either static file data or CGI output data to memory. If this data becomes too large, Liso server may come across potential memory overflow problem.
+
+2, Concurrency
+
+   Lisod can maximumly hold #FD_SETSIZE active sockets (network socket and CGI pipe descriptors), when further netowrk I/O resource is needed, Lisod will crash because of the lack of the resource.
+
+3, Timeout not implemented
+
+   Lisod does not implement timeout mechanism yet. So if a client sends partial request and holds a long time, Lisod will wait for this malicious client forever till further info is needed.

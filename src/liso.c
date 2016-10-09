@@ -15,7 +15,7 @@ char *PRIVATE_KEY_FILE;
 char *CERT_FILE;
 
 /* Global client pool */
-client_pool pool;
+client_pool *p;
 
 /* Global socket */
 int listenfd;
@@ -86,23 +86,24 @@ int main(int args, char **argv) {
 
   /* Init client pool */
   init_pool();
+  init_CGI_pool();
 
   console_log("[INFO] ************Liso Echo Server*********");
   while(1) {
-    pool.read_fds = pool.master;
-    pool.write_fds = pool.master;
-    pool.nready = select(pool.maxfd+1, &pool.read_fds, &pool.write_fds, NULL, NULL);
+    p->read_fds = p->master;
+    p->write_fds = p->master;
+    p->nready = select(p->maxfd+1, &(p->read_fds), &(p->write_fds), NULL, NULL);
 
     /* Handle exception in select, ignore all inormal cases */
-    if (pool.nready <= 0) {
-      if (pool.nready < 0) {
+    if (p->nready <= 0) {
+      if (p->nready < 0) {
         tear_down();
         err_sys("error in select");
       }
       continue;
     }
 
-    if (FD_ISSET(listenfd, &pool.read_fds)) {
+    if (FD_ISSET(listenfd, &(p->read_fds))) {
       /* Handle new incoming connections from http port */
       console_log("[Main] Incoming HTTP client!");
       newfd = accept(listenfd, (sockaddr *) &clientaddr, &addrlen);
@@ -119,10 +120,10 @@ int main(int args, char **argv) {
                                     remoteIP,
                                     INET6_ADDRSTRLEN);
       add_client_to_pool(newfd, NULL, HTTP_CLIENT, remote_addr);
-      if (pool.nready <= 0) continue;   /* No more readable descriptors */
+      if (p->nready <= 0) continue;   /* No more readable descriptors */
     }
 
-    if (FD_ISSET(ssl_socket, &pool.read_fds)) {
+    if (FD_ISSET(ssl_socket, &(p->read_fds))) {
       /* Handle new  incomming connecitions from https port */
       console_log("[Main] Incoming HTTPS client!");
       newfd = accept(ssl_socket, (sockaddr *) &clientaddr, &addrlen);
@@ -147,7 +148,7 @@ int main(int args, char **argv) {
                                     remoteIP,
                                     INET6_ADDRSTRLEN);
       add_client_to_pool(newfd, client_context, HTTPS_CLIENT, remote_addr);
-      if (pool.nready <= 0) continue;   /*No more readable descriptors */
+      if (p->nready <= 0) continue;   /*No more readable descriptors */
     }
 
     /* Handle client request : read and write */

@@ -13,10 +13,13 @@
 typedef enum http_process_result{
   ERROR,
   CLOSE,
+  PENDING_REQUEST,
   PERSIST,
   NOT_ENOUGH_DATA,    /* for POST method */
   CGI_READY_FOR_READ,
-  CGI_READY_FOR_WRITE
+  CGI_READY_FOR_WRITE,
+  CGI_READY_FOR_READ_CLOSE,
+  CGI_READY_FOR_WRITE_CLOSE
 }http_process_result;
 
 typedef struct host_and_port {
@@ -24,7 +27,7 @@ typedef struct host_and_port {
     int port;
 } host_and_port;
 
-http_process_result handle_http_request(int, dynamic_buffer *, size_t, host_and_port);
+http_process_result handle_http_request(int, dynamic_buffer *, size_t, host_and_port, dynamic_buffer*);
 void reply_to_client(int, char*);
 int check_http_version(Request *);
 

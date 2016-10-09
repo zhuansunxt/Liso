@@ -25,7 +25,7 @@ CGI_pool * cgi_pool;
  * The caller of this function should check the return value:
  * TODO: add documentation of return type
  */
-http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len, host_and_port has) {
+http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len, host_and_port has, dynamic_buffer *pending_request) {
 #ifdef DEBUG_VERBOSE
   console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, client_buffer->buffer,
               strlen(client_buffer->buffer));
@@ -115,11 +115,17 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
       size_t cl = atoi(get_header_value(request, "Content-Length"));
       if (cl > 0) {
         handle_dynamic_request(clientfd, cgi_parameters, client_buffer->buffer + header_len, cl);
-        return CGI_READY_FOR_WRITE;
+        if (!strcmp(connection_header_val, "close"))
+          return CGI_READY_FOR_WRITE_CLOSE;
+        else
+          return CGI_READY_FOR_WRITE;
       }
     }
     handle_dynamic_request(clientfd, cgi_parameters, NULL, 0);
-    return CGI_READY_FOR_READ;
+    if (!strcmp(connection_header_val, "close"))
+      return CGI_READY_FOR_READ_CLOSE;
+    else
+      return CGI_READY_FOR_READ;
   } else {                                 /* Handle statics http request */
     char *method = request->http_method;
 
@@ -572,6 +578,10 @@ void print_executor(CGI_executor *executor) {
 void print_CGI_pool() {
   int i = 0;
   console_log("-------CGI Pool Info--------");
+  if (cgi_pool == NULL) {
+    console_log("Empty CGI Pool");
+    return ;
+  }
   while (cgi_pool->executors[i] != NULL) {
     print_executor(cgi_pool->executors[i]);
     i++;

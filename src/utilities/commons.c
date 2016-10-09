@@ -68,9 +68,16 @@ void close_log() {
 void err_sys(const char *fmt, ...){
   va_list(args);
   va_start(args, fmt);
-  printf("[Crash]");
-  vprintf(fmt, args);
-  printf("\n");
+  if (log_file != NULL) {
+    fprintf(log_file, "[--Liso Crash--]");
+    vfprintf(log_file, fmt, args);
+    fprintf(log_file, "\n");
+    fflush(log_file);
+  } else {
+    printf("[--Liso Crash--]");
+    vprintf(fmt, args);
+    printf("\n");
+  }
   va_end(args);
   exit(SERVER_FAILURE);
 }

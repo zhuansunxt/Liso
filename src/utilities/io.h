@@ -59,5 +59,6 @@ void init_dbuffer(dynamic_buffer *);
 void append_content_dbuffer(dynamic_buffer *, char *buf, ssize_t len);
 void reset_dbuffer(dynamic_buffer *);
 void free_dbuffer(dynamic_buffer *);
+void print_dbuffer(dynamic_buffer *);
 
 #endif //LISO_IO_H

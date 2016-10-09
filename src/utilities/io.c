@@ -291,6 +291,16 @@ void reset_dbuffer(dynamic_buffer *dbuf) {
   dbuf->send_offset = 0;
 }
 
+void print_dbuffer(dynamic_buffer *dbuf) {
+  if (dbuf == NULL) {
+    console_log("Empty Buffer");
+  } else {
+    console_log("Buffer offset: %d", dbuf->offset);
+    console_log("Buffer capacity: %d", dbuf->capacity);
+    console_log("Buffer send offset: %d", dbuf->send_offset);
+  }
+}
+
 void free_dbuffer(dynamic_buffer *dbuf) {
   free(dbuf->buffer);
   free(dbuf);
