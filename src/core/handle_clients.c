@@ -209,7 +209,7 @@ void handle_clients() {
     if (clientfd <= 0) continue;
 
     memset(buf, 0, sizeof(char)*BUF_SIZE);
-    //set_fl(clientfd, O_NONBLOCK);     /* set fd to be non-blocking */
+    set_fl(clientfd, O_NONBLOCK);     /* set fd to be non-blocking */
 
     if ((FD_ISSET(clientfd, &p->read_fds) || p->back_up_buffer[i] != NULL) && (p->state[i] == READY_FOR_READ)) {
       console_log("[Main select loop] Client %d is ready for reading", clientfd);
