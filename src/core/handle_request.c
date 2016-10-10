@@ -26,11 +26,10 @@ CGI_pool * cgi_pool;
  * TODO: add documentation of return type
  */
 http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buffer, size_t header_len, host_and_port has, dynamic_buffer *pending_request) {
-#ifdef DEBUG_VERBOSE
   console_log("[INFO][HTTP] Client %d sent request:\n%sLength: %d", clientfd, client_buffer->buffer,
               strlen(client_buffer->buffer));
   console_log("[INFO][HTTP] Header Len: %d", header_len);
-#endif
+  console_log("[INFO][HTTP] Request Len: %d", client_buffer->offset);
 
   /* default return value */
   http_process_result return_value = PERSIST;
@@ -46,20 +45,6 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
     return CLOSE;   //connection should be closed when encountering bad request.
   }
 
-/*
-#ifdef DEBUG_VERBOSE
-  console_log("[INFO][PARSER] -------Parsed HTTP Request Begin--------");
-  console_log("[Http Method] %s\n",request->http_method);
-  console_log("[Http Version] %s\n",request->http_version);
-  console_log("[Http Uri] %s\n",request->http_uri);
-  int index;
-  for(index = 0;index < request->header_count;index++){
-    console_log("[Header name] %s : [Header Value] %s\n",request->headers[index].header_name,request->headers[index].header_value);
-  }
-  console_log("[INFO][PARSER] -------Parsed HTTP Request End--------");
-#endif
-*/
-
   /* Check Connection header. If 'connection: close' is
    * found, then should set return value to be 0, otherwise
    * set return value to be 1
@@ -67,7 +52,7 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
   char *connection_header_val;
   int last_conn = 0;
   connection_header_val = get_header_value(request, "Connection");
-  if (!strcmp(connection_header_val, "close")) {
+  if (!strcmp(connection_header_val, "Close")) {
     return_value = CLOSE;
     last_conn = 1;
   }
@@ -81,30 +66,54 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
     return CLOSE;
   }
 
+  /* Handle pending request problem, along with POST content-length problem */
+  size_t content_len;
+  if (!strcmp(request->http_method, "POST")) {
+    /* For POST check whether Conteng-Length is valid,
+     * whether body is fully received, and whether has pending data
+     */
+    char *content_length_str;
+    content_length_str = get_header_value(request, "Content-Length");
+    if (strlen(content_length_str) == 0) {
+      reply_411(client_buffer);
+      free_request(request);
+      return CLOSE;
+    }
+    content_len = atoi(content_length_str);
+    console_log("POST content length: %d", content_len);
+    if ((int)content_len < 0) {
+      console_log("Invalid content length");
+      reply_411(client_buffer);
+      free_request(request);
+      return CLOSE;
+    }
+    if ((content_len + header_len) > client_buffer->offset) {
+      return NOT_ENOUGH_DATA;         // post method message body not fully received yet.
+    } else if ((content_len + header_len) < client_buffer->offset) {
+      size_t request_len = header_len+content_len;
+      append_content_dbuffer(pending_request, client_buffer->buffer+request_len, client_buffer->offset-request_len);
+    }
+  } else if (!strcmp(request->http_method, "GET") || !strcmp(request->http_method, "HEAD")) {
+    if (client_buffer->offset > header_len) {
+      append_content_dbuffer(pending_request, client_buffer->buffer+header_len, client_buffer->offset-header_len);
+      console_log("Client %d has pending request: %s", clientfd, pending_request->buffer);
+      console_log("With Length %d", pending_request->offset);
+    }
+  } else {
+    reply_501(client_buffer);
+    free_request(request);
+    return CLOSE;
+  }
+
   char *cgi_prefix = "/cgi/";
   char prefix[8];
   memset(prefix, 0, 8);
-  if (strlen(request->http_uri) > strlen(cgi_prefix))
+  if (strlen(request->http_uri) >= strlen(cgi_prefix))
     snprintf(prefix, strlen(cgi_prefix) + 1, "%s", request->http_uri);
 
+  console_log("prefix: %s", prefix);
   if (!strcmp(cgi_prefix, prefix)) {       /* Handle dynamic http request */
-    /* Check whether POST method has enough message body */
-    if (!strcmp(request->http_method, "POST")) {
-      /* Check Conteng-Length header field */
-      char *content_length_str;
-      content_length_str = get_header_value(request, "Content-Length");
-      if (strlen(content_length_str) == 0) {
-        reply_411(client_buffer);
-        free_request(request);
-        return CLOSE;         // close current connection for 411 error.
-      }
-
-      size_t content_len = atoi(content_length_str);
-      console_log("Content-len : %d + Header-len: %d : Buffer-len: %d", content_len, header_len, client_buffer->offset);
-      if ((content_len + header_len) > client_buffer->offset)
-        return NOT_ENOUGH_DATA;         // post method message body not fully received yet.
-    }
-
+    console_log("It's a CGI request!");
     CGI_param *cgi_parameters = init_CGI_param();
     build_CGI_param(cgi_parameters, request, has);
     print_CGI_param(cgi_parameters);
@@ -115,18 +124,20 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
       size_t cl = atoi(get_header_value(request, "Content-Length"));
       if (cl > 0) {
         handle_dynamic_request(clientfd, cgi_parameters, client_buffer->buffer + header_len, cl);
-        if (!strcmp(connection_header_val, "close"))
+        if (!strcmp(connection_header_val, "Close"))
           return CGI_READY_FOR_WRITE_CLOSE;
         else
           return CGI_READY_FOR_WRITE;
       }
     }
+
     handle_dynamic_request(clientfd, cgi_parameters, NULL, 0);
-    if (!strcmp(connection_header_val, "close"))
+    if (!strcmp(connection_header_val, "Close"))
       return CGI_READY_FOR_READ_CLOSE;
     else
       return CGI_READY_FOR_READ;
   } else {                                 /* Handle statics http request */
+    console_log("It's a static request!");
     char *method = request->http_method;
 
     if (!strcmp(method, "HEAD")) {
@@ -138,26 +149,9 @@ http_process_result handle_http_request(int clientfd, dynamic_buffer* client_buf
       do_get(clientfd, request, client_buffer, last_conn);
       free_request(request);
     } else if (!strcmp(method, "POST")) {
-      /* Check Conteng-Length header field */
-      char *content_length_str;
-      content_length_str = get_header_value(request, "Content-Length");
-      if (strlen(content_length_str) == 0) {
-        reply_411(client_buffer);
-        free_request(request);
-        return CLOSE;         // close current connection for 411 error.
-      }
-
-      size_t content_len = atoi(content_length_str);
-      console_log("Content-len : %d + Header-len: %d : Buffer-len: %d", content_len, header_len,
-                  client_buffer->offset);
-      if ((content_len + header_len) > client_buffer->offset)
-        return NOT_ENOUGH_DATA;         // post method message body not fully received yet.
-
+      reset_dbuffer(client_buffer);
       do_post(clientfd, request, client_buffer, last_conn,
-              client_buffer->buffer + header_len, content_len);
-      free_request(request);
-    } else {
-      reply_501(client_buffer);
+              client_buffer->buffer+header_len, content_len);
       free_request(request);
     }
 
@@ -264,7 +258,7 @@ int do_head(int client, Request * request, dynamic_buffer *client_buffer, int la
   send_header(client_buffer, "Content-Type", mime_type);
   send_header(client_buffer, "Last-modified", last_modified);
   if (last_conn)
-    send_header(client_buffer, "connection", "close");
+    send_header(client_buffer, "connection", "Close");
   else
     send_header(client_buffer, "connection", "keep-alive");
   send_msg(client_buffer, clrf);
@@ -320,9 +314,9 @@ int do_get(int client, Request *request, dynamic_buffer *client_buffer, int last
   send_header(client_buffer, "Content-Type", mime_type);
   send_header(client_buffer, "Last-modified", last_modified);
   if (last_conn)
-    send_header(client_buffer, "Connection", "close");
+    send_header(client_buffer, "Connection", "Close");
   else
-    send_header(client_buffer, "Connection", "keep-alive");
+    send_header(client_buffer, "Connection", "Keep-alive");
   send_msg(client_buffer, clrf);
 
   size_t body_len;
@@ -397,7 +391,7 @@ void free_request(Request *request) {
 void reply_400(dynamic_buffer *client_buffer){
   reset_dbuffer(client_buffer);
   send_response(client_buffer, (char*)"400", (char*)"Bad Request");
-  send_header(client_buffer, "Connection", "close");
+  send_header(client_buffer, "Connection", "Close");
   send_msg(client_buffer, clrf);
 }
 
@@ -410,25 +404,28 @@ void reply_404(dynamic_buffer *client_buffer){
 void reply_411(dynamic_buffer *client_buffer){
   reset_dbuffer(client_buffer);
   send_response(client_buffer, (char*)"411", (char*)"Length Required");
-  send_header(client_buffer, "Connection", "close");
+  send_header(client_buffer, "Connection", "Close");
+  send_msg(client_buffer, clrf);
 }
 
 void reply_500(dynamic_buffer *client_buffer){
   reset_dbuffer(client_buffer);
   send_response(client_buffer, (char*)"500", (char*)"Internal Server Error");
-  send_header(client_buffer, "Connection", "close");
+  send_header(client_buffer, "Connection", "Close");
+  send_msg(client_buffer, clrf);
 }
 
 void reply_501(dynamic_buffer *client_buffer){
   reset_dbuffer(client_buffer);
   send_response(client_buffer, (char*)"501", (char*)"Not Implemented");
+  send_header(client_buffer, "Connection", "Close");
   send_msg(client_buffer, clrf);
 }
 
 void reply_505(dynamic_buffer *client_buffer){
   reset_dbuffer(client_buffer);
   send_response(client_buffer, (char*)"505", (char*)"HTTP Version not supported");
-  send_header(client_buffer, "Connection", "close");
+  send_header(client_buffer, "Connection", "Close");
   send_msg(client_buffer, clrf);
 }
 
@@ -456,15 +453,21 @@ void build_CGI_param(CGI_param * param,  Request *request, host_and_port hap) {
   set_envp_field_by_str("REQUEST_URI", request->http_uri, buf, param, index++);
   set_envp_field_by_str("SCRIPT_NAME", "/cgi", buf, param, index++);
 
+
   char path_info[512];  memset(path_info, 0, 512);
   char query_string[512]; memset(query_string, 0, 512);
-  size_t split = strstr(request->http_uri, "?") - request->http_uri;
-
-  memcpy(query_string, request->http_uri+split+1, strlen(request->http_uri)-split-1);
-  set_envp_field_by_str("QUERY_STRING", query_string, buf, param, index++);
-
-  memcpy(path_info, request->http_uri+4, split-4);
-  set_envp_field_by_str("PATH_INFO", path_info, buf, param, index++);
+  char *split_char;
+  if ((split_char = strstr(request->http_uri, "?")) != NULL) {
+    size_t split = split_char - request->http_uri;
+    memcpy(query_string, request->http_uri+split+1, strlen(request->http_uri)-split-1);
+    set_envp_field_by_str("QUERY_STRING", query_string, buf, param, index++);
+    memcpy(path_info, request->http_uri+4, split-4);
+    set_envp_field_by_str("PATH_INFO", path_info, buf, param, index++);
+  } else {
+    set_envp_field_by_str("QUERY_STRING", "", buf, param, index++);
+    memcpy(path_info, request->http_uri+4, strlen(request->http_uri)-4);
+    set_envp_field_by_str("PATH_INFO", path_info, buf, param, index++);
+  }
 
   /* envp taken from request */
   set_envp_field_with_header(request, "Content-Length", "CONTENT_LENGTH", buf, param, index++);
@@ -502,7 +505,7 @@ void print_CGI_param(CGI_param * param) {
 
 char *new_string(char *str) {
   char * buf = (char*)malloc(strlen(str)+1);
-  memcpy(buf, str, strlen(str));
+  memcpy(buf, str, strlen(str)+1);
   return buf;
 }
 
@@ -613,77 +616,77 @@ void execve_error_handler() {
   switch (errno)
   {
     case E2BIG:
-      fprintf(stderr, "The total number of bytes in the environment \
+      console_log("The total number of bytes in the environment \
 (envp) and argument list (argv) is too large.\n");
       return;
     case EACCES:
-      fprintf(stderr, "Execute permission is denied for the file or a \
+      console_log("Execute permission is denied for the file or a \
 script or ELF interpreter.\n");
       return;
     case EFAULT:
-      fprintf(stderr, "filename points outside your accessible address \
+      console_log("filename points outside your accessible address \
 space.\n");
       return;
     case EINVAL:
-      fprintf(stderr, "An ELF executable had more than one PT_INTERP \
+      console_log("An ELF executable had more than one PT_INTERP \
 segment (i.e., tried to name more than one \
 interpreter).\n");
       return;
     case EIO:
-      fprintf(stderr, "An I/O error occurred.\n");
+      console_log("An I/O error occurred.\n");
       return;
     case EISDIR:
-      fprintf(stderr, "An ELF interpreter was a directory.\n");
+      console_log("An ELF interpreter was a directory.\n");
       return;
-//         case ELIBBAD:
-//             fprintf(stderr, "An ELF interpreter was not in a recognised \
-// format.\n");
-//             return;
+    case ELIBBAD:
+      console_log("An ELF interpreter was not in a recognised \
+ format.\n");
+      return;
     case ELOOP:
-      fprintf(stderr, "Too many symbolic links were encountered in \
+      console_log("Too many symbolic links were encountered in \
 resolving filename or the name of a script \
 or ELF interpreter.\n");
       return;
     case EMFILE:
-      fprintf(stderr, "The process has the maximum number of files \
+      console_log("The process has the maximum number of files \
 open.\n");
       return;
     case ENAMETOOLONG:
-      fprintf(stderr, "filename is too long.\n");
+      console_log("filename is too long.\n");
       return;
     case ENFILE:
-      fprintf(stderr, "The system limit on the total number of open \
+      console_log("The system limit on the total number of open \
 files has been reached.\n");
       return;
     case ENOENT:
-      fprintf(stderr, "The file filename or a script or ELF interpreter \
+      console_log("The file filename or a script or ELF interpreter \
 does not exist, or a shared library needed for \
 file or interpreter cannot be found.\n");
       return;
     case ENOEXEC:
-      fprintf(stderr, "An executable is not in a recognised format, is \
+      console_log("An executable is not in a recognised format, is \
 for the wrong architecture, or has some other \
 format error that means it cannot be \
 executed.\n");
       return;
     case ENOMEM:
-      fprintf(stderr, "Insufficient kernel memory was available.\n");
+      console_log("Insufficient kernel memory was available.\n");
       return;
     case ENOTDIR:
-      fprintf(stderr, "A component of the path prefix of filename or a \
+      console_log("A component of the path prefix of filename or a \
 script or ELF interpreter is not a directory.\n");
       return;
     case EPERM:
-      fprintf(stderr, "The file system is mounted nosuid, the user is \
+      console_log("The file system is mounted nosuid, the user is \
 not the superuser, and the file has an SUID or \
 SGID bit set.\n");
       return;
     case ETXTBSY:
-      fprintf(stderr, "Executable was open for writing by one or more \
+      console_log("Executable was open for writing by one or more \
 processes.\n");
       return;
     default:
-      fprintf(stderr, "Unkown error occurred with execve().\n");
+      console_log("Unkown error occurred with execve().\n");
       return;
   }
 }
@@ -726,10 +729,10 @@ void handle_dynamic_request(int cliendfd, CGI_param *cgi_parameter, char *post_b
   }
 
   if (pid == 0) {     /* Child CGI process */
-    close(cgi_pool->executors[slot]->stdin_pipe[1]);
     close(cgi_pool->executors[slot]->stdout_pipe[0]);
-    dup2(cgi_pool->executors[slot]->stdin_pipe[0], fileno(stdin));
+    close(cgi_pool->executors[slot]->stdin_pipe[1]);
     dup2(cgi_pool->executors[slot]->stdout_pipe[1], fileno(stdout));
+    dup2(cgi_pool->executors[slot]->stdin_pipe[0], fileno(stdin));
 
     /* Execute CGI Script */
     if (execve(cgi_pool->executors[slot]->cgi_parameter->filename,
@@ -741,7 +744,7 @@ void handle_dynamic_request(int cliendfd, CGI_param *cgi_parameter, char *post_b
   }
 
   if (pid > 0) {
-    close(cgi_pool->executors[slot]->stdin_pipe[0]);
     close(cgi_pool->executors[slot]->stdout_pipe[1]);
+    close(cgi_pool->executors[slot]->stdin_pipe[0]);
   }
 }

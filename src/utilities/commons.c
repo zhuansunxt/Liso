@@ -15,11 +15,20 @@ int ssl_socket;
  * Use this logging to output interactive info.
  */
 void console_log(const char *fmt, ...){
+#ifdef DEBUG_VERBOSE
   va_list(args);
   va_start(args, fmt);
   vprintf(fmt, args);
   printf("\n");
   va_end(args);
+#else
+  va_list(args);
+  va_start(args, fmt);
+  vfprintf(log_file, fmt, args);
+  va_end(args);
+  fprintf(log_file, "\n");
+  fflush(log_file);
+#endif
 }
 
 /*
@@ -30,12 +39,13 @@ int init_log() {
   int log_exist;
   if ((log_exist = access(LOGFILE, R_OK)) == 0) {
     remove(LOGFILE);
-    console_log("[INFO] log file exists, force delete it");
+    printf("[INFO] log file exists, force delete it\n");
   }
 
   log_file = fopen(LOGFILE, "a");
   if (log_file == NULL) {
-    err_sys("[ERROR] log file can not be created");
+    printf("[ERROR] log file can not be created");
+    return -1;
   }
   return 0;
 }
@@ -91,6 +101,7 @@ void tear_down() {
   close_log();
   close(listenfd);
   close(ssl_socket);
+  printf("teared down!");
 }
 
 void set_fl(int fd, int flags) /* flags are file status flags to turn on */

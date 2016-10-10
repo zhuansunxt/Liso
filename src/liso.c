@@ -41,34 +41,32 @@ int main(int args, char **argv) {
 
   /* Daemonize the process */
 #ifndef DEBUG_VERBOSE
-  daemonize();
+  if (daemonize() != EXIT_SUCCESS) {
+    fprintf(stderr, "Daemonizing Lisod fails");
+    exit(EXIT_FAILURE);
+  }
 #endif
 
-  /* Install signal handler */
-  install_signal_handler();
-
-  /* Let server process be mutual exclusive: lock on lock file */
-  char lstr[8];
-  lfd = open(LOCKFILE, O_RDWR|O_CREAT, 0640);
-  if (lfd < 0) {
-    fprintf(stderr, "[Main][Error] Can not open lock file");
-    exit(EXIT_FAILURE);
-  }
-  if (lockf(lfd, F_TLOCK, 0) < 0) {
-    fprintf(stderr, "[Main][Error] Can not lock on the lock file");
-    exit(EXIT_FAILURE);
-  }
-  sprintf(lstr, "%d\n", getpid());
-  write(lfd, lstr, strlen(lstr));
-
   /* Global initializations */
-  init_log();
+  if (init_log() < 0) {
+    fprintf(stderr, "Error when creating log");
+    exit(EXIT_FAILURE);
+  }
   create_folder(WWW_FOLDER, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+
+  dump_log("HTTP port: %d", port);
+  dump_log("HTTPS port: %d", https_port);
+  dump_log("Log file: %s", LOCKFILE);
+  dump_log("Lock file: %s", LOCKFILE);
+  dump_log("WWW folder %s", WWW_FOLDER);
+  dump_log("CGI script %s", CGI_scripts);
+  dump_log("Private key file %s", PRIVATE_KEY_FILE);
+  dump_log("Certificate file %s", CERT_FILE);
 
   /* HTTP network resource parameters */
   int newfd;
   sockaddr_in clientaddr;
-  socklen_t addrlen = sizeof(sockaddr_in);
+  socklen_t addrlen = sizeof(clientaddr);
   char remoteIP[INET6_ADDRSTRLEN];
 
   /* SSL initialization */
@@ -80,9 +78,12 @@ int main(int args, char **argv) {
   }
 
   /* Create server's only listener socket */
-  while ((listenfd = open_listenfd(port)) < 0);
-  //while (ssl_socket = open_listenfd(https_port) < 0);
-  while ((ssl_socket = open_ssl_socket(https_port, ssl_context)) < 0);
+  if ((listenfd = open_listenfd(port)) < 0) {
+    dump_log("Can not create HTTP port");
+  }
+  if ((ssl_socket = open_ssl_socket(https_port, ssl_context)) < 0) {
+    dump_log("Can not create HTTPS port");
+  }
 
   /* Init client pool */
   init_pool();
@@ -128,19 +129,34 @@ int main(int args, char **argv) {
       console_log("[Main] Incoming HTTPS client!");
       newfd = accept(ssl_socket, (sockaddr *) &clientaddr, &addrlen);
       if (newfd < 0) {
-#ifdef DEBUG_VERBOSE
         console_log("error when accepting new client connection from HTTPS port %d", https_port);
-#endif
         dump_log("[ERROR] error when accepting new client connection from HTTP port %d", https_port);
         continue;
       }
 
       /* wrap socket with ssl */
       SSL *client_context;
-
-      if ((client_context = wrap_socket_with_ssl(newfd, ssl_context)) == NULL) {
-        console_log("error when wrapping new client connection from HTTPS port");
-        continue;
+      if ((client_context = SSL_new(ssl_context)) == NULL) {
+        close(ssl_socket);
+        SSL_CTX_free(ssl_context);
+        console_log("[SSL error] Error creating client SSL context");
+        exit(EXIT_FAILURE);
+      }
+      if (SSL_set_fd(client_context, newfd) == 0) {
+        close(ssl_socket);
+        SSL_free(client_context);
+        SSL_CTX_free(ssl_context);
+        console_log("[SSL error] Error creating client SSL context in SSL_set_fd");
+        exit(EXIT_FAILURE);
+      }
+      int rv;
+      if ((rv = SSL_accept(client_context)) <= 0) {
+        console_log("[OpenSSL Error] %s", ERR_error_string(SSL_get_error(client_context, rv), NULL));
+        close(ssl_socket);
+        SSL_free(client_context);
+        SSL_CTX_free(ssl_context);
+        console_log("[SSL error] Error accepting (handshake) client SSL contenxt)");
+        exit(EXIT_FAILURE);
       }
 
       char *remote_addr = (char*)inet_ntop(clientaddr.sin_family,
@@ -156,29 +172,42 @@ int main(int args, char **argv) {
   }
 }
 
-/* Daemonze the server process */
-void daemonize() {
-  pid_t pid;
-  int i;
-  int fd_0, fd_1, fd_2;
+int daemonize() {
+  int i, lfp, pid = fork();
+  char str[256] = {0};
+  if (pid < 0) exit(EXIT_FAILURE);
+  if (pid > 0) exit(EXIT_SUCCESS);
 
-  /* Detach from parent's controlling tty */
-  if ((pid = fork() < 0)) {
-    console_log("[Main][Error] Can not fork!");
-    exit(EXIT_FAILURE);
-  } else if (pid > 0) {
-    exit(EXIT_SUCCESS);
-  }
   setsid();
 
-  /* Close all open descriptors inherited */
-  for (i = getdtablesize(); i >= 0; i--)
+  for (i = getdtablesize(); i>=0; i--)
     close(i);
 
-  /* Attach file descriptors 0, 1, and 2 to /dev/null. */
-  fd_0 = open ("/dev/null", O_RDWR);
-  fd_1 = dup (0);
-  fd_2 = dup (0);
+  i = open("/dev/null", O_RDWR);
+  dup(i); /* stdout */
+  dup(i); /* stderr */
+  umask(027);
+
+  lfp = open(LOCKFILE, O_RDWR|O_CREAT, 0640);
+
+  if (lfp < 0)
+    exit(EXIT_FAILURE); /* can not open */
+
+  if (lockf(lfp, F_TLOCK, 0) < 0)
+    exit(EXIT_SUCCESS); /* can not lock */
+
+  /* only first instance continues */
+  sprintf(str, "%d\n", getpid());
+  write(lfp, str, strlen(str)); /* record pid to lockfile */
+
+  signal(SIGINT, sig_handler);
+  signal(SIGTERM, sig_handler);
+  signal(SIGPIPE, SIG_IGN);
+  signal(SIGHUP, SIG_IGN);
+  signal(SIGCHLD, SIG_IGN); /* child terminate signal */
+
+  return EXIT_SUCCESS;
+
 }
 
 /* Intialize SSL given context */
@@ -216,32 +245,36 @@ SSL_CTX *ssl_init() {
 }
 
 /* Wrap the client socket with SSL */
+/*
 SSL *wrap_socket_with_ssl(int client_sock, SSL_CTX *ssl_context) {
   SSL *client_context;
+  int rv, err;
 
   console_log("New client socket: %d", client_sock);
   if ((client_context = SSL_new(ssl_context)) == NULL)
   {
-    fprintf(stderr, "Error creating client SSL context.\n");
+    console_log("\"Error creating client SSL context");
     return NULL;
   }
 
-  if (SSL_set_fd(client_context, client_sock) == 0)
+  if ((rv = SSL_set_fd(client_context, client_sock)) == 0)
   {
     SSL_free(client_context);
-    fprintf(stderr, "Error creating client SSL context.\n");
+    console_log("Error creating client SSL context");
     return NULL;
   }
 
-  if (SSL_accept(client_context) <= 0)
+  if ((rv = SSL_accept(client_context)) <= 0)
   {
     SSL_free(client_context);
-    fprintf(stderr, "Error accepting (handshake) client SSL context.\n");
+    console_log("Error accepting (handshake) client SSL context");
+    console_log("[OpenSSL Error] %s", ERR_error_string(SSL_get_error(client_context, rv), NULL));
     return NULL;
   }
 
   return client_context;
 }
+*/
 
 /* Install signal handler */
 void install_signal_handler() {

@@ -298,6 +298,7 @@ void print_dbuffer(dynamic_buffer *dbuf) {
     console_log("Buffer offset: %d", dbuf->offset);
     console_log("Buffer capacity: %d", dbuf->capacity);
     console_log("Buffer send offset: %d", dbuf->send_offset);
+    console_log("Buffer content %s", dbuf->buffer);
   }
 }
 

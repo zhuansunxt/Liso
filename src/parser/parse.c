@@ -67,9 +67,6 @@ Request * parse(char *buffer, int size) {
     request->headers = (Request_header *)
             malloc(sizeof(Request_header)*default_header_list_size);
 
-#ifdef DEBUG_VERBOSE
-    console_log("[INFO][PARSER]restart on every parsing invocation");
-#endif
     yyrestart(NULL);
     set_parsing_options(buf, i, request);
 

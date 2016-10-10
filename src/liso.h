@@ -27,7 +27,7 @@ extern int ssl_socket;
 
 /* Helper functions */
 void sig_handler(int);
-void daemonize();
+int daemonize();
 SSL_CTX* ssl_init();
 void install_signal_handler();
 SSL* wrap_socket_with_ssl(int, SSL_CTX*);

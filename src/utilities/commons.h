@@ -11,7 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define DEBUG_VERBOSE 1
+//#define DEBUG_VERBOSE 1
 #define SERVER_FAILURE 1   /* main execution returns this value when server crash */
 #define BUF_SIZE 8192
 
