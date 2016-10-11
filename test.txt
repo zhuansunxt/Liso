@@ -66,7 +66,11 @@ server. The result shows that Liso can handle concurrent request without crashin
 or replying unexpected result. The load generator will simultaneously send 30
 requests of different types as described in integration test part.
 
-But after testing Liso on Autolab, my load generator seems too naive.
+Stress tests are also achieved by using apache benckmark. In my test, I set
+the parameters up to:
+
+	-c Concurrency: 200
+	-n Number of request to perform: 5000
 
 
 
