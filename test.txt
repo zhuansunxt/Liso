@@ -1,0 +1,81 @@
+################################################################################
+# TESTING                                                                      #
+#                                                                              #
+# Description: This file describes testing methods for Liso                		 #
+#                                                                              #
+# Authors: Xiaotong Sun (xiaotons@cs.cmu.edu)                                  #
+#                                                                              #
+################################################################################
+
+The testing for my implementation of Liso mainly contains three parts:
+
+ - Unit Tests
+ - Integration Tests
+ - Stress Tests
+
+Unit Test
+--------------------------------------------------------------------------------
+Unit tests are written for Liso's different modules, and is mainly done for 
+utility functions and not mainly for core modules. The reason is it's hard to 
+stimulate correct and meaninful test cases for the core logic of Liso since
+these modules (e.g. client handlers, request handlers, network handlers) are
+coupled to some degree. For other utilities, unit tests are written to ensure
+the correctness. For example, it takes some effort to test 'dynamic buffer' I/O
+utility to make sure it can handle relatively large data in memory (up to 20MB).
+
+
+Integration Test
+--------------------------------------------------------------------------------
+Integration tests are conducted to ensure the overall implementation of Lisod
+is correct. For this part of the testing, the main approach is by using telnet.
+The integration test can be described by the following different sub-tests:
+
+- Static request test
+
+							Test request 															Expected Return
+	
+	- HEAD Test: HTTP HEAD request for /index.html				HTTP/1.1 200 OK
+	- GET Test: HTTP GET request for /index.html					HTTP/1.1 200 OK + index.html
+	- Version Test: request with HTTP/1.0									HTTP/1.1 505 HTTP Version Not Supported
+	- Method Test: request with method PUT								HTTP/1.1 501 Not Implemented
+	- Content Length Test: POST request with length -1 		HTTP/1.1 411 Content-Length Required
+	- 404 Error Test: request with URI /none.html					HTTP/1.1 404 Not Found
+	- Bad Request Test:	request not is malformed					HTTP/1.1 400 Bad Request
+
+- Dynamic request test
+
+							Test request 															Expected Return
+
+	- GET Test: HTTP GET request with /cgi/								HTTP/1.1 200 OK + Content
+	- HEAD Test: HTTP HEAD request with /cgi/path					HTTP/1.1 200 OK
+	- POST Test: HTTP POST request with body							HTTP/1.1 200 OK + Content
+	- 500 Test: HTTP POST request with incorrect 
+							cgi script file path											HTTP/1.1 500 Internal Error
+
+- SSL test
+		
+	This part of the testing is conducted by using Chrome browser with 'https://'.
+	Test considered success if normal browser operation can be achieved.																		
+
+
+Stress Test
+--------------------------------------------------------------------------------
+Stress tests are conducted to ensure Liso server can handle concurrent request 
+from more than one client. I wrote a simple load generator to stress test the Liso
+server. The result shows that Liso can handle concurrent request without crashing
+or replying unexpected result. The load generator will simultaneously send 30
+requests of different types as described in integration test part.
+
+But after testing Liso on Autolab, my load generator seems too naive.
+
+
+
+
+
+
+
+
+
+
+
+
