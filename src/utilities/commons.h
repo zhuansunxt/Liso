@@ -13,7 +13,7 @@
 
 //#define DEBUG_VERBOSE 1
 #define SERVER_FAILURE 1   /* main execution returns this value when server crash */
-#define BUF_SIZE 16384
+#define BUF_SIZE 30000
 
 char *LOGFILE;
 FILE *log_file;
